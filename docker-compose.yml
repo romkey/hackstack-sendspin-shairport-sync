@@ -1,0 +1,50 @@
+services:
+  sendspin-shareplay:
+    image: ghcr.io/romkey/sendspin-shareplay:latest
+    # Build locally instead with: docker compose build
+    build:
+      context: .
+      args:
+        SHAIRPORT_SYNC_VERSION: "5.2.3"
+        NQPTP_VERSION: "1.2.8"
+        SENDSPIN_VERSION: "7.5.0"
+    container_name: sendspin-shareplay
+    restart: unless-stopped
+
+    # AirPlay 2 needs mDNS and nqptp's fixed ports (319/320), so host networking
+    # is required -- bridge networking will not work.
+    network_mode: host
+
+    # Lets Shairport Sync raise its own scheduling priority for stable timing.
+    cap_add:
+      - SYS_NICE
+
+    devices:
+      - "/dev/snd:/dev/snd"
+
+    environment:
+      AIRPLAY_NAME: "Living Room"
+      SENDSPIN_NAME: "Living Room"
+
+      # Raspberry Pi 3.5mm headphone jack. Check yours with:
+      #   docker exec sendspin-shareplay aplay -l
+      ALSA_PCM: "hw:Headphones,0"
+
+      # dmix lets both players hold the sound card at once.
+      # Use "exclusive" for bit-perfect output if only one source is ever active.
+      AUDIO_SHARING: "dmix"
+      ALSA_RATE: "44100"
+
+      WEB_PORT: "8080"
+      TZ: "America/Los_Angeles"
+
+      # Optional: pin a Sendspin server instead of relying on mDNS discovery.
+      # SENDSPIN_URL: "ws://192.168.1.10:8927/sendspin"
+
+    volumes:
+      - ./config:/config
+
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"

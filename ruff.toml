@@ -1,0 +1,10 @@
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "I", "B"]
+
+[lint.per-file-ignores]
+# dbus-fast reads D-Bus type signatures out of string annotations ("s", "a{sv}"),
+# which are not valid Python types.
+"scripts/fake_mpris.py" = ["F821", "F722"]

@@ -1,0 +1,40 @@
+name: upstream-watch
+
+on:
+  schedule:
+    # Every day at 06:20 UTC.
+    - cron: "20 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Check upstream releases
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/check_upstream.py
+
+      - name: Open a version-bump pull request
+        if: steps.check.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: chore/upstream-bump
+          commit-message: "chore: bump upstream versions"
+          title: "chore: bump upstream versions"
+          body: |
+            An upstream project published a new release.
+
+            ${{ steps.check.outputs.summary }}
+
+            Merging this rebuilds and publishes the image.
+          labels: upstream
+          delete-branch: true
