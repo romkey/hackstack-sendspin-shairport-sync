@@ -23,7 +23,10 @@ ARG SHAIRPORT_SYNC_VERSION
 ARG NQPTP_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update && apt-get install -y --no-install-recommends \
         autoconf \
         automake \
         build-essential \
@@ -48,7 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         pkg-config \
         uuid-dev \
         xxd \
-    && rm -rf /var/lib/apt/lists/*
+    ;
 
 # --- nqptp: the PTP timing helper AirPlay 2 depends on -----------------------
 WORKDIR /src
@@ -97,13 +100,18 @@ FROM rust:1-trixie AS spotifyd-builder
 ARG SPOTIFYD_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update && apt-get install -y --no-install-recommends \
         libasound2-dev \
         libdbus-1-dev \
         pkg-config \
-    && rm -rf /var/lib/apt/lists/*
+    ;
 
-RUN cargo install spotifyd \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/build/target,sharing=locked \
+    CARGO_TARGET_DIR=/build/target cargo install spotifyd \
         --version "${SPOTIFYD_VERSION}" \
         --locked \
         --no-default-features \
@@ -118,24 +126,29 @@ FROM debian:${DEBIAN_SUITE}-slim AS python-builder
 ARG SENDSPIN_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
         python3 \
         python3-dev \
         python3-venv \
-    && rm -rf /var/lib/apt/lists/*
+    ;
 
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # pip and wheel are build tooling; sendspin itself is pinned below.
 # hadolint ignore=DL3013
-RUN pip install --no-cache-dir --upgrade pip wheel \
-    && pip install --no-cache-dir "sendspin==${SENDSPIN_VERSION}"
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install --upgrade pip wheel \
+    && pip install "sendspin==${SENDSPIN_VERSION}"
 
 COPY web /src/web
-RUN pip install --no-cache-dir /src/web
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install /src/web
 
 ##############################################################################
 # Stage 4: runtime
@@ -148,7 +161,10 @@ ARG SENDSPIN_VERSION
 ARG SPOTIFYD_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update && apt-get install -y --no-install-recommends \
         alsa-utils \
         avahi-daemon \
         bluez \
@@ -181,7 +197,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 \
         supervisor \
         tzdata \
-    && rm -rf /var/lib/apt/lists/* /etc/avahi/services/*.service
+    && rm -rf /etc/avahi/services/*.service
 
 COPY --from=native-builder /out/usr/local/bin/nqptp /usr/local/bin/nqptp
 COPY --from=native-builder /out/usr/local/bin/shairport-sync /usr/local/bin/shairport-sync

@@ -6,6 +6,7 @@ on:
     tags: ["v*"]
     paths-ignore: ["docs/**", "**/*.md", "LICENSE"]
   pull_request:
+    paths-ignore: ["docs/**", "**/*.md", "LICENSE"]
   workflow_dispatch:
   repository_dispatch:
     types: [upstream-release]
@@ -22,13 +23,25 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # One job per architecture, each on a runner of that architecture. This image
+  # compiles shairport-sync, nqptp and spotifyd from source, and doing the arm64
+  # build under QEMU on an x86 runner cost roughly ten times what it costs
+  # natively. Each job pushes an untagged image by digest; the merge job below
+  # assembles those digests into one multi-platform tag.
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
-      attestations: write
-      id-token: write
 
     steps:
       - name: Check out
@@ -43,16 +56,11 @@ jobs:
         id: plan
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # Pull requests only need to prove the image still builds.
-            echo "platforms=linux/amd64" >> "$GITHUB_OUTPUT"
             echo "push=false" >> "$GITHUB_OUTPUT"
           else
-            echo "platforms=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
             echo "push=true" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+          echo "slug=${{ matrix.platform }}" | tr '/' '-' >> "$GITHUB_OUTPUT"
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -65,7 +73,87 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Derive tags and labels
+      - name: Derive labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          labels: |
+            org.opencontainers.image.version.shairport-sync=${{ steps.versions.outputs.SHAIRPORT_SYNC_VERSION }}
+            org.opencontainers.image.version.nqptp=${{ steps.versions.outputs.NQPTP_VERSION }}
+            org.opencontainers.image.version.sendspin=${{ steps.versions.outputs.SENDSPIN_VERSION }}
+            org.opencontainers.image.version.spotifyd=${{ steps.versions.outputs.SPOTIFYD_VERSION }}
+
+      - name: Build ${{ matrix.platform }}
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Pushing by digest leaves the tagging to the merge job. On a pull
+          # request nothing is pushed and this just proves the image builds.
+          outputs: ${{ steps.plan.outputs.push == 'true' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.IMAGE_NAME) || 'type=cacheonly' }}
+          # Attestations are added once, against the final index, in the merge job.
+          provenance: false
+          sbom: false
+          # Separate scopes, or the two architectures evict each other's cache.
+          cache-from: type=gha,scope=${{ steps.plan.outputs.slug }}
+          cache-to: type=gha,mode=max,scope=${{ steps.plan.outputs.slug }}
+          build-args: |
+            SHAIRPORT_SYNC_VERSION=${{ steps.versions.outputs.SHAIRPORT_SYNC_VERSION }}
+            NQPTP_VERSION=${{ steps.versions.outputs.NQPTP_VERSION }}
+            SENDSPIN_VERSION=${{ steps.versions.outputs.SENDSPIN_VERSION }}
+            SPOTIFYD_VERSION=${{ steps.versions.outputs.SPOTIFYD_VERSION }}
+
+      - name: Record the digest
+        if: steps.plan.outputs.push == 'true'
+        run: |
+          mkdir -p "${{ runner.temp }}/digests"
+          touch "${{ runner.temp }}/digests/${{ steps.build.outputs.digest }}"
+
+      - name: Upload the digest
+        if: steps.plan.outputs.push == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ steps.plan.outputs.slug }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Combines the per-architecture digests into the tags people actually pull.
+  merge:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    outputs:
+      digest: ${{ steps.index.outputs.digest }}
+
+    steps:
+      - name: Download the digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ${{ env.REGISTRY }}
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -73,46 +161,37 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
-          labels: |
-            org.opencontainers.image.version.shairport-sync=${{ steps.versions.outputs.SHAIRPORT_SYNC_VERSION }}
-            org.opencontainers.image.version.nqptp=${{ steps.versions.outputs.NQPTP_VERSION }}
-            org.opencontainers.image.version.sendspin=${{ steps.versions.outputs.SENDSPIN_VERSION }}
-            org.opencontainers.image.version.spotifyd=${{ steps.versions.outputs.SPOTIFYD_VERSION }}
 
-      - name: Build and push
-        id: push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: ${{ steps.plan.outputs.platforms }}
-          push: ${{ steps.plan.outputs.push }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            SHAIRPORT_SYNC_VERSION=${{ steps.versions.outputs.SHAIRPORT_SYNC_VERSION }}
-            NQPTP_VERSION=${{ steps.versions.outputs.NQPTP_VERSION }}
-            SENDSPIN_VERSION=${{ steps.versions.outputs.SENDSPIN_VERSION }}
-            SPOTIFYD_VERSION=${{ steps.versions.outputs.SPOTIFYD_VERSION }}
+      - name: Create the multi-platform manifest
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          # shellcheck disable=SC2046
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@%s ' *)
+
+      - name: Read the index digest
+        id: index
+        run: |
+          digest="$(docker buildx imagetools inspect \
+            '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}' \
+            --format '{{json .Manifest}}' | jq -r .digest)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Attest build provenance
-        if: steps.plan.outputs.push == 'true'
         uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
+          subject-digest: ${{ steps.index.outputs.digest }}
           push-to-registry: true
 
   smoke-test:
     # Boots the freshly built image with audio disabled and checks that the
     # supervised processes come up and the web UI answers.
-    needs: build
-    if: github.event_name != 'pull_request'
+    needs: merge
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -129,4 +208,4 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run smoke test
-        run: ./scripts/smoke-test.sh "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-$(git rev-parse --short HEAD)"
+        run: ./scripts/smoke-test.sh "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.merge.outputs.digest }}"

@@ -403,13 +403,28 @@ docker build \
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| [`build.yml`](.github/workflows/build.yml) | push to `main`, tags, PRs, weekly cron, `repository_dispatch` | Builds `linux/amd64` + `linux/arm64`, pushes to GHCR with build provenance, then smoke-tests the pushed image |
+| [`build.yml`](.github/workflows/build.yml) | push to `main`, tags, PRs, weekly cron, `repository_dispatch` | Builds `linux/amd64` and `linux/arm64` in parallel on native runners, merges them into one multi-platform tag on GHCR with build provenance, then smoke-tests it |
 | [`upstream-watch.yml`](.github/workflows/upstream-watch.yml) | daily cron | Checks shairport-sync, nqptp and sendspin releases; opens a PR bumping `versions.env` when one moves |
 | [`lint.yml`](.github/workflows/lint.yml) | push, PR | hadolint, shellcheck, ruff |
 
-Pull requests build for `amd64` only and don't push, so they stay fast. Merging an
-upstream-bump PR rebuilds and republishes automatically. The weekly cron rebuild picks
-up Debian security updates even when nothing in the repo changed.
+**Why the build is split by architecture.** This image compiles shairport-sync, nqptp
+and spotifyd from source. Building arm64 under QEMU on an x86 runner made a cold build
+take about 18 minutes, most of it emulation overhead. Each architecture now builds on a
+runner of its own kind — GitHub's `ubuntu-24.04-arm` runners are free for public repos —
+pushes an untagged image by digest, and a small merge job assembles those digests into
+the tags people actually pull. The two builds run concurrently, so wall-clock time is
+whichever architecture is slower rather than the sum.
+
+Layer caching is per-architecture (`type=gha` with a scope per platform, or they evict
+each other), so a change that only touches `web/` or `rootfs/` reuses the compile stages
+entirely — those builds land in a couple of minutes.
+
+The Dockerfile also uses BuildKit cache mounts for apt, cargo and pip. Those do **not**
+persist between CI runs, since each runner starts clean; they are there to make local
+rebuilds fast, and they keep the downloaded archives out of the image layers.
+
+Merging an upstream-bump PR rebuilds and republishes automatically. The weekly cron
+rebuild picks up Debian security updates even when nothing in the repo changed.
 
 ## Versioning
 
