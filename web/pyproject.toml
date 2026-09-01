@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nowplaying"
-version = "0.1.0"
+version = "0.2.0"
 description = "Unified now-playing web UI for Shairport Sync and Sendspin, via MPRIS"
 requires-python = ">=3.12"
 license = { text = "MIT" }

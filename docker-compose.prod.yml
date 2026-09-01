@@ -1,0 +1,41 @@
+# Runs the published image from GitHub Container Registry.
+#
+#   cp .env.example .env && $EDITOR .env
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Use docker-compose.yml instead if you want to build the image from this
+# checkout. To update:
+#
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+
+services:
+  sendspin-shareplay:
+    image: ghcr.io/romkey/hackstack-sendspin-shairport-sync:${IMAGE_TAG:-latest}
+    container_name: sendspin-shareplay
+    restart: unless-stopped
+
+    # AirPlay 2 needs mDNS on the LAN and nqptp's fixed UDP ports 319/320,
+    # so host networking is required -- bridge networking will not work.
+    network_mode: host
+
+    # Lets Shairport Sync raise its own scheduling priority for stable timing.
+    cap_add:
+      - SYS_NICE
+
+    devices:
+      - "/dev/snd:/dev/snd"
+
+    # Every variable in .env is passed through to the container.
+    env_file:
+      - .env
+
+    volumes:
+      # Optional shairport-sync.conf / asound.conf overrides, plus Sendspin's
+      # persistent settings. See config/README.md.
+      - ./config:/config
+
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"

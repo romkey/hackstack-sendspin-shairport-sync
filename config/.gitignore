@@ -1,0 +1,6 @@
+# This directory is mounted at /config in the container, so it collects runtime
+# state (Sendspin settings) and the user's own config. Track only the examples.
+*
+!.gitignore
+!README.md
+!*.example

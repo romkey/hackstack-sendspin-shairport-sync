@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1.7
 #
-# sendspin-shareplay -- Sendspin + Shairport Sync (AirPlay 2) in one image,
-# with a unified "now playing" web UI.
+# hackstack-sendspin-shairport-sync
+#
+# Sendspin + Shairport Sync (AirPlay 2) in one image, with a unified
+# "now playing" web UI.
 #
 # Both players expose MPRIS on a private D-Bus session bus inside the container;
 # the web UI is an MPRIS observer, so it shows whichever source is playing.
@@ -183,7 +185,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
 
-LABEL org.opencontainers.image.title="sendspin-shareplay" \
+LABEL org.opencontainers.image.title="hackstack-sendspin-shairport-sync" \
       org.opencontainers.image.description="Sendspin + Shairport Sync (AirPlay 2) with a unified now-playing web UI" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.source="https://github.com/romkey/sendspin-shareplay"
+      org.opencontainers.image.source="https://github.com/romkey/hackstack-sendspin-shairport-sync"

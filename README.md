@@ -1,12 +1,12 @@
-# sendspin-shareplay
+# hackstack-sendspin-shairport-sync
 
 **One container that turns a Raspberry Pi into both a [Sendspin](https://github.com/Sendspin/sendspin-cli) player and an [AirPlay 2](https://github.com/mikebrady/shairport-sync) speaker — with a single web page showing whatever is playing.**
 
-[![build](https://github.com/romkey/sendspin-shareplay/actions/workflows/build.yml/badge.svg)](https://github.com/romkey/sendspin-shareplay/actions/workflows/build.yml)
-[![lint](https://github.com/romkey/sendspin-shareplay/actions/workflows/lint.yml/badge.svg)](https://github.com/romkey/sendspin-shareplay/actions/workflows/lint.yml)
-[![upstream-watch](https://github.com/romkey/sendspin-shareplay/actions/workflows/upstream-watch.yml/badge.svg)](https://github.com/romkey/sendspin-shareplay/actions/workflows/upstream-watch.yml)
-[![ghcr.io](https://img.shields.io/badge/ghcr.io-sendspin--shareplay-2496ed?logo=docker&logoColor=white)](https://github.com/romkey/sendspin-shareplay/pkgs/container/sendspin-shareplay)
-[![license](https://img.shields.io/github/license/romkey/sendspin-shareplay)](LICENSE)
+[![build](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/build.yml/badge.svg)](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/build.yml)
+[![lint](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/lint.yml/badge.svg)](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/lint.yml)
+[![upstream-watch](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/upstream-watch.yml/badge.svg)](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/upstream-watch.yml)
+[![ghcr.io](https://img.shields.io/badge/ghcr.io-hackstack--sendspin--shairport--sync-2496ed?logo=docker&logoColor=white)](https://github.com/romkey/hackstack-sendspin-shairport-sync/pkgs/container/hackstack-sendspin-shairport-sync)
+[![license](https://img.shields.io/github/license/romkey/hackstack-sendspin-shairport-sync)](LICENSE)
 
 [![shairport-sync](https://img.shields.io/github/v/release/mikebrady/shairport-sync?label=shairport-sync&color=informational)](https://github.com/mikebrady/shairport-sync/releases)
 [![nqptp](https://img.shields.io/github/v/release/mikebrady/nqptp?label=nqptp&color=informational)](https://github.com/mikebrady/nqptp/releases)
@@ -17,6 +17,17 @@ pinned to live in [`versions.env`](versions.env); a daily job opens a pull reque
 whenever upstream moves ahead of them.
 
 ---
+
+> ### 🤖 Built with AI assistance
+>
+> This repository — the Dockerfile, the entrypoint and service scripts, the web UI,
+> the GitHub Actions workflows and this README — was generated with
+> [Claude Code](https://claude.com/claude-code) and then reviewed and tested by a
+> human. The image builds and the container was exercised end to end, but treat it
+> the way you would any code you didn't write yourself: read it before you run it.
+>
+> The upstream software it packages — Shairport Sync, nqptp and Sendspin — is not
+> AI-generated. See [Credits](#credits).
 
 ## What you get
 
@@ -68,21 +79,40 @@ aplay -l
 The 3.5&nbsp;mm headphone jack is usually `hw:Headphones,0`; a HAT DAC is typically
 `hw:sndrpihifiberry,0` or similar.
 
-Then grab [`docker-compose.yml`](docker-compose.yml), set `ALSA_PCM` and the names, and:
+Then pull the repo (or just [`docker-compose.prod.yml`](docker-compose.prod.yml) and
+[`.env.example`](.env.example)), set `ALSA_PCM` and the names, and start it:
 
 ```bash
-docker compose up -d
+git clone https://github.com/romkey/hackstack-sendspin-shairport-sync.git
+cd hackstack-sendspin-shairport-sync
+cp .env.example .env
+$EDITOR .env
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-Open `http://<pi-address>:8080`, and the speaker appears in AirPlay pickers and in
-Music Assistant.
+That runs the published image from GHCR. Open `http://<pi-address>:8080`, and the
+speaker appears in AirPlay pickers and in Music Assistant.
+
+To update later:
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+There are two compose files: [`docker-compose.prod.yml`](docker-compose.prod.yml) pulls
+the published image and reads everything from `.env`, while
+[`docker-compose.yml`](docker-compose.yml) builds from this checkout with the settings
+inline — use that one when you are changing the image itself.
 
 > **Host networking is required.** AirPlay 2 needs mDNS on the LAN and nqptp needs
 > UDP ports 319/320. Bridge networking will not work.
 
 ## Configuration
 
-Everything is environment variables; mount `/config` for persistence and overrides.
+Everything is environment variables. Copy [`.env.example`](.env.example) to `.env` —
+it lists every variable below with notes — and mount `/config` for persistence and
+file-level overrides.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
@@ -110,14 +140,22 @@ Everything is environment variables; mount `/config` for persistence and overrid
 
 ### Config file overrides
 
-Drop either of these into the mounted `/config` volume and the entrypoint will use it
-verbatim instead of generating one:
+When the environment variables aren't enough, drop a config file into the mounted
+`config/` directory and the entrypoint uses it verbatim instead of generating one.
+Annotated starting points ship in [`config/`](config/):
 
-- `/config/shairport-sync.conf` — full [Shairport Sync configuration](https://github.com/mikebrady/shairport-sync/blob/master/scripts/shairport-sync.conf).
+- `config/shairport-sync.conf` — full [Shairport Sync configuration](https://github.com/mikebrady/shairport-sync/blob/master/scripts/shairport-sync.conf).
   If you write your own, keep `mpris_service_bus = "session";` or the web UI will lose AirPlay metadata.
-- `/config/asound.conf` — your own ALSA routing.
+- `config/asound.conf` — your own ALSA routing, including softvol and bit-perfect variants.
 
-Sendspin's own persistent settings live in `/config/sendspin/`.
+```bash
+cp config/shairport-sync.conf.example config/shairport-sync.conf
+docker compose -f docker-compose.prod.yml restart
+```
+
+Sendspin's own persistent settings live in `config/sendspin/`. See
+[`config/README.md`](config/README.md) for the details, including which `.env`
+variables a config file overrides.
 
 ## Sharing one sound card
 
@@ -223,6 +261,23 @@ docker build \
 Pull requests build for `amd64` only and don't push, so they stay fast. Merging an
 upstream-bump PR rebuilds and republishes automatically. The weekly cron rebuild picks
 up Debian security updates even when nothing in the repo changed.
+
+## Versioning
+
+Three version numbers matter here, and they move independently:
+
+| What | Where it lives | How it moves |
+| --- | --- | --- |
+| Image release | git tags (`v0.2.0`) | Tagging pushes `0.2.0`, `0.2` and `latest` to GHCR |
+| Bundled upstreams | [`versions.env`](versions.env) | The daily watcher opens a bump PR |
+| Web UI package | [`web/pyproject.toml`](web/pyproject.toml) | Bumped by hand; served at `/healthz` |
+
+Every push to `main` also publishes `latest` and a `sha-<short>` tag, so you don't have
+to wait for a release to run the newest build. Cut a release with:
+
+```bash
+git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0
+```
 
 ## Credits
 

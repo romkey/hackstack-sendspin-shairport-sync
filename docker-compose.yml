@@ -1,6 +1,6 @@
 services:
   sendspin-shareplay:
-    image: ghcr.io/romkey/sendspin-shareplay:latest
+    image: ghcr.io/romkey/hackstack-sendspin-shairport-sync:latest
     # Build locally instead with: docker compose build
     build:
       context: .

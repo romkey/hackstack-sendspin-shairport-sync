@@ -1,0 +1,63 @@
+// Example Shairport Sync configuration.
+//
+// Rename to shairport-sync.conf in this directory and the entrypoint will use
+// it verbatim instead of generating one from the environment. Once you do that,
+// AIRPLAY_NAME / SHAIRPORT_OUTPUT_DEVICE / ALSA_MIXER_* in .env are ignored --
+// set them here instead.
+//
+// Full reference:
+// https://github.com/mikebrady/shairport-sync/blob/master/scripts/shairport-sync.conf
+
+general = {
+  name = "Living Room";
+
+  // "auto" uses libsoxr when the CPU can afford it, otherwise basic interpolation.
+  interpolation = "auto";
+
+  // REQUIRED for the web UI. Both players publish MPRIS on the container's
+  // private session bus; the UI reads them from there. Leave these alone
+  // unless you have stopped using the bundled web UI.
+  dbus_service_bus = "session";
+  mpris_service_bus = "session";
+
+  // Uncomment to require a passcode to connect.
+  //password = "1234";
+
+  // "software" volume is the right choice with AUDIO_SHARING=dmix, since dmix
+  // has no hardware mixer. Set an alsa mixer_control_name below for hardware
+  // volume when using AUDIO_SHARING=exclusive.
+  //volume_range_db = 60;
+
+  // Seconds of silence before Shairport Sync releases the output device.
+  // Raise it if the first second of a track gets clipped when playback resumes.
+  //drift_tolerance_in_seconds = 0.002;
+};
+
+alsa = {
+  // "default" is the shared dmix device the entrypoint sets up. Point this at a
+  // raw device such as "hw:Headphones,0" only if you are not sharing the card.
+  output_device = "default";
+
+  // Hardware volume. Find the control name with:
+  //   docker exec sendspin-shareplay amixer scontrols
+  //mixer_control_name = "PCM";
+  //mixer_device = "hw:Headphones";
+
+  // Increase if you hear dropouts on a busy Pi. Costs latency.
+  //audio_backend_buffer_desired_length_in_seconds = 0.2;
+};
+
+metadata = {
+  // The web UI needs these two for titles and cover art.
+  enabled = "yes";
+  include_cover_art = "yes";
+  cover_art_cache_directory = "/var/lib/shairport-sync/coverart";
+
+  // How often to emit playback progress, in seconds.
+  progress_interval = 1.0;
+};
+
+diagnostics = {
+  // 0 is quiet; raise to 2 or 3 when debugging, then watch `docker logs`.
+  log_verbosity = 0;
+};

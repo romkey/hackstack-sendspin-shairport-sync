@@ -1,0 +1,70 @@
+# Example ALSA configuration.
+#
+# Rename to asound.conf in this directory and the entrypoint will install it as
+# /etc/asound.conf instead of generating one. AUDIO_SHARING, ALSA_PCM and
+# ALSA_RATE in .env are then ignored.
+#
+# This example reproduces what AUDIO_SHARING=dmix generates, so it is a good
+# starting point for customising. Replace hw:Headphones,0 throughout with your
+# own device -- find it with:  docker exec sendspin-shareplay aplay -l
+
+# The mixing device. Both Shairport Sync and Sendspin can open this at the same
+# time; whatever they play is summed. dmix fixes the format, so anything that
+# isn't 16-bit stereo at this rate gets converted by the "plug" wrappers below.
+pcm.shared_dmix {
+    type dmix
+    ipc_key 3781
+    ipc_perm 0666
+    slave {
+        pcm "hw:Headphones,0"
+        rate 44100
+        channels 2
+        format S16_LE
+        period_size 1024
+        buffer_size 8192
+    }
+    bindings {
+        0 0
+        1 1
+    }
+}
+
+# What both players open. "plug" handles rate and format conversion.
+pcm.!default {
+    type plug
+    slave.pcm "shared_dmix"
+}
+
+ctl.!default {
+    type hw
+    card 0
+}
+
+##############################################################################
+# Variation: software volume on top of dmix
+##############################################################################
+# dmix exposes no mixer, so `amixer` has nothing to control. Adding a softvol
+# device gives you one. To use it, point pcm.!default at "shared_volume" and set
+# ALSA_MIXER_CONTROL=SoftMaster in .env.
+#
+#pcm.shared_volume {
+#    type softvol
+#    slave.pcm "shared_dmix"
+#    control {
+#        name "SoftMaster"
+#        card 0
+#    }
+#    min_dB -51.0
+#    max_dB 0.0
+#}
+
+##############################################################################
+# Variation: exclusive, bit-perfect output to a DAC
+##############################################################################
+# No mixing and no conversion, so only one player can hold the card at a time.
+# Equivalent to AUDIO_SHARING=exclusive.
+#
+#pcm.!default {
+#    type plug
+#    slave.pcm "hw:sndrpihifiberry,0"
+#}
