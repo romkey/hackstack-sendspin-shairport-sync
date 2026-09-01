@@ -25,7 +25,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends shellcheck
-          shellcheck rootfs/usr/local/bin/*.sh scripts/*.sh
+          # SC1091: the sourced helper is only present inside the image.
+          shellcheck -e SC1091 rootfs/usr/local/bin/*.sh scripts/*.sh
 
       - name: Set up Python
         uses: actions/setup-python@v5

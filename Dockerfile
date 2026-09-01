@@ -49,18 +49,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # --- nqptp: the PTP timing helper AirPlay 2 depends on -----------------------
 WORKDIR /src
-RUN git clone --depth 1 --branch "${NQPTP_VERSION}" https://github.com/mikebrady/nqptp.git nqptp \
-    && cd nqptp \
-    && autoreconf -fi \
+RUN git clone --depth 1 --branch "${NQPTP_VERSION}" https://github.com/mikebrady/nqptp.git nqptp
+
+WORKDIR /src/nqptp
+RUN autoreconf -fi \
     && ./configure --prefix=/usr/local \
     && make -j"$(nproc)" \
     && make install DESTDIR=/out
 
 # --- shairport-sync ----------------------------------------------------------
+WORKDIR /src
 RUN git clone --depth 1 --branch "${SHAIRPORT_SYNC_VERSION}" \
-        https://github.com/mikebrady/shairport-sync.git shairport-sync \
-    && cd shairport-sync \
-    && autoreconf -fi \
+        https://github.com/mikebrady/shairport-sync.git shairport-sync
+
+WORKDIR /src/shairport-sync
+RUN autoreconf -fi \
     && ./configure \
         --prefix=/usr/local \
         --sysconfdir=/etc \
@@ -98,6 +101,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+# pip and wheel are build tooling; sendspin itself is pinned below.
+# hadolint ignore=DL3013
 RUN pip install --no-cache-dir --upgrade pip wheel \
     && pip install --no-cache-dir "sendspin==${SENDSPIN_VERSION}"
 
@@ -173,7 +178,7 @@ VOLUME ["/config"]
 EXPOSE 8080/tcp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD /usr/local/bin/healthcheck.sh
+    CMD ["/usr/local/bin/healthcheck.sh"]
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
