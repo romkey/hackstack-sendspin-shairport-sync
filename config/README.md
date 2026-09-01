@@ -6,7 +6,9 @@ This directory is mounted at `/config` inside the container. It holds three thin
 | --- | --- | --- |
 | `shairport-sync.conf` | you | Used verbatim instead of the config the entrypoint generates from `.env` |
 | `asound.conf` | you | Installed as `/etc/asound.conf` instead of the generated ALSA setup |
+| `bluetooth.conf` | you | Installed as `/etc/bluetooth/main.conf` instead of the generated BlueZ config |
 | `sendspin/` | the Sendspin daemon | Persistent client settings — volume, delay, remembered servers |
+| `bluetooth/` | BlueZ | Pairing keys, so paired phones survive a rebuild |
 
 Nothing here is required. With an empty `config/`, the entrypoint generates both
 config files from the environment variables in `.env`, which is enough for most

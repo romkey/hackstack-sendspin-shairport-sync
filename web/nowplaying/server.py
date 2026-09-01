@@ -14,7 +14,7 @@ from urllib.parse import unquote, urlparse
 from aiohttp import web
 
 from nowplaying import __version__
-from nowplaying.mpris import MprisWatcher
+from nowplaying.players import PlayerWatcher
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ ART_ROOTS = tuple(
     if p
 )
 
-WATCHER_KEY = web.AppKey("watcher", MprisWatcher)
+WATCHER_KEY = web.AppKey("watcher", PlayerWatcher)
 
 
 async def handle_index(request: web.Request) -> web.FileResponse:
@@ -117,7 +117,7 @@ async def _stop_watcher(app: web.Application) -> None:
 def create_app(poll_interval: float = 1.0) -> web.Application:
     """Build the aiohttp application."""
     app = web.Application()
-    app[WATCHER_KEY] = MprisWatcher(poll_interval=poll_interval)
+    app[WATCHER_KEY] = PlayerWatcher(poll_interval=poll_interval)
 
     app.router.add_get("/", handle_index)
     app.router.add_get("/healthz", handle_health)

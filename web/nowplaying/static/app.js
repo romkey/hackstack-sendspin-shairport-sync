@@ -20,7 +20,12 @@
     conn: el("conn"),
   };
 
-  const SOURCE_LABEL = { airplay: "AirPlay", sendspin: "Sendspin", other: "MPRIS" };
+  const SOURCE_LABEL = {
+    airplay: "AirPlay",
+    sendspin: "Sendspin",
+    bluetooth: "Bluetooth",
+    other: "MPRIS",
+  };
 
   // Position is sampled about once a second; interpolate between samples so the
   // progress bar moves smoothly.

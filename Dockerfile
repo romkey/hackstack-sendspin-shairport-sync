@@ -124,6 +124,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         alsa-utils \
         avahi-daemon \
+        bluez \
+        bluez-alsa-utils \
         ca-certificates \
         dbus \
         libasound2t64 \
@@ -165,6 +167,10 @@ ENV PATH="/opt/venv/bin:$PATH" \
 ENV ENABLE_AIRPLAY=1 \
     ENABLE_SENDSPIN=1 \
     ENABLE_WEB=1 \
+    ENABLE_BLUETOOTH=0 \
+    BLUETOOTH_ADAPTER=hci0 \
+    BLUETOOTH_AUDIO_DEVICE=default \
+    BLUETOOTH_DISCOVERABLE=1 \
     AIRPLAY_MODE=airplay2 \
     AUDIO_SHARING=dmix \
     ALSA_PCM=hw:0,0 \
@@ -173,7 +179,7 @@ ENV ENABLE_AIRPLAY=1 \
     SENDSPIN_AUDIO_DEVICE=default \
     WEB_PORT=8080
 
-RUN mkdir -p /run/dbus /config /var/lib/shairport-sync/coverart \
+RUN mkdir -p /run/dbus /run/bluetooth /config /var/lib/shairport-sync/coverart \
     && chmod +x /usr/local/bin/*.sh
 
 VOLUME ["/config"]

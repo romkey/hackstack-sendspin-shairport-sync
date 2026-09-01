@@ -36,5 +36,5 @@ jobs:
       - name: Lint and type-check the web UI
         run: |
           pip install ruff
-          ruff check web scripts
-          ruff format --check web scripts
+          ruff check web scripts rootfs
+          ruff format --check web scripts rootfs

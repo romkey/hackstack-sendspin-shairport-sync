@@ -33,6 +33,7 @@ whenever upstream moves ahead of them.
 
 - **AirPlay 2** via Shairport Sync + nqptp — play to the Pi from iPhone, iPad, Mac, or HomePod groups.
 - **Sendspin** via the official `sendspin` daemon — the open multi-room protocol used by Music Assistant and Home Assistant.
+- **Bluetooth A2DP** (optional, off by default) — pair a phone and play to the Pi directly, as a third source.
 - **One web UI** at `http://<pi>:8080` that shows cover art, title, artist, album and progress for *whichever* source is playing.
 - Both players **sharing the same sound card** through ALSA `dmix`, so you don't have to pick one.
 - Multi-arch images (`linux/amd64`, `linux/arm64`) published to GitHub Container Registry on every push, tag, and upstream release.
@@ -44,20 +45,24 @@ D-Bus interface. The container runs a private D-Bus session bus, points both pla
 and the web UI is simply an MPRIS observer:
 
 ```
-                 ┌──────────────────── container ─────────────────────┐
-  iPhone ──────► │  shairport-sync ──┐                                │
-  (AirPlay 2)    │  + nqptp          │                                │
-                 │                   ├─► D-Bus session bus (MPRIS)    │
-  Music          │  sendspin daemon ─┘         │                      │
-  Assistant ───► │        │                    ▼                      │
-  (Sendspin)     │        │            nowplaying web UI ─────────────┼──► :8080
-                 │        ▼                                           │
-                 │   ALSA dmix ──────────────────────────────────────►│──► 3.5mm jack / DAC
-                 └────────────────────────────────────────────────────┘
+                 ┌───────────────────── container ──────────────────────┐
+  iPhone ──────► │  shairport-sync ──┐                                  │
+  (AirPlay 2)    │  + nqptp          │                                  │
+                 │                   ├─► session bus (MPRIS) ─┐         │
+  Music          │  sendspin daemon ─┘                        │         │
+  Assistant ───► │        │                                   ▼         │
+  (Sendspin)     │        │                        nowplaying web UI ───┼──► :8080
+                 │        │                                   ▲         │
+  Phone ───────► │  bluetoothd + bluealsa ─► system bus (AVRCP)         │
+  (Bluetooth)    │        │                                             │
+                 │        ▼                                             │
+                 │   ALSA dmix ────────────────────────────────────────►│──► 3.5mm jack / DAC
+                 └──────────────────────────────────────────────────────┘
 ```
 
-Nothing is hard-coded to the two players: any process on that bus that exports
-`org.mpris.MediaPlayer2.*` shows up in the UI.
+Nothing is hard-coded to particular players: any process exporting
+`org.mpris.MediaPlayer2.*` on the session bus shows up in the UI, and so does any
+`org.bluez.MediaPlayer1` on the system bus.
 
 ## Quick start on a Raspberry Pi
 
@@ -132,6 +137,11 @@ file-level overrides.
 | `SENDSPIN_AUDIO_FORMAT` | *unset* | e.g. `flac:48000:24:2` |
 | `SENDSPIN_HARDWARE_VOLUME` | `false` | dmix has no hardware mixer, so software volume by default |
 | `SENDSPIN_INTERFACE` | *unset* | Bind Sendspin to one network interface |
+| `ENABLE_BLUETOOTH` | `0` | Set `1` for the Bluetooth A2DP sink — see below |
+| `BLUETOOTH_NAME` | `AIRPLAY_NAME` | Name shown when pairing |
+| `BLUETOOTH_ADAPTER` | `hci0` | Which adapter to use |
+| `BLUETOOTH_AUDIO_DEVICE` | `default` | ALSA device Bluetooth audio plays to |
+| `BLUETOOTH_DISCOVERABLE` | `1` | Set `0` to stop advertising once paired |
 | `WEB_PORT` | `8080` | Web UI port |
 | `LOG_LEVEL` | `info` | `debug` for much noisier logs |
 | `EXTRA_SHAIRPORT_ARGS` | *unset* | Appended to the `shairport-sync` command line |
@@ -168,6 +178,51 @@ play simultaneously you will hear both, mixed.
 For bit-perfect output to a good DAC, set `AUDIO_SHARING=exclusive` — then only one
 player can hold the card, and the other will fail to start playback until it's free.
 
+## Bluetooth (optional)
+
+Off by default. Turning it on adds a third source: a phone pairs with the Pi and
+plays straight to it over A2DP, mixed into the same output as AirPlay and Sendspin,
+and showing up in the same web UI via AVRCP metadata.
+
+> **Not verified on hardware.** Everything else here was tested end to end in a
+> container. Bluetooth could not be — Docker has no radio to give it, so the
+> BlueZ reader in the web UI was tested against a stand-in service
+> ([`scripts/fake_bluez.py`](scripts/fake_bluez.py)) and the daemons were only
+> checked as far as "they start and take their D-Bus names". The pairing and
+> audio path itself is unproven. Treat this feature as beta.
+
+It needs three things beyond `ENABLE_BLUETOOTH=1`:
+
+1. **`NET_ADMIN`** on the container — uncomment it under `cap_add` in the compose file.
+2. **Host networking**, which you already have. Bluetooth adapters belong to a network
+   namespace, so the container sees `hci0` only because it shares the host's.
+3. **The host's Bluetooth stack stopped.** Only one `bluetoothd` can own an adapter,
+   and it has to be the container's:
+
+   ```bash
+   sudo systemctl disable --now bluetooth
+   ```
+
+That third point is the real cost: the Pi then has no Bluetooth of its own — no BT
+keyboards, no host pairing. If you need Bluetooth on the host for anything else,
+leave this off.
+
+**Pairing is automatic.** There is no screen or keypad on a headless Pi, so the
+container runs an agent that accepts every pairing request and trusts the device
+afterwards so it can reconnect on its own. That means anyone in radio range can pair
+while the Pi is discoverable. Once your own devices are paired, set
+`BLUETOOTH_DISCOVERABLE=0` to stop advertising. Pairing keys are stored in
+`config/bluetooth/`, so they survive a rebuild.
+
+**What to expect:**
+
+- **SBC only**, so quality sits below AirPlay and Sendspin.
+- **No cover art.** AVRCP 1.6 can carry it but BlueZ does not expose it, so Bluetooth
+  tracks show the placeholder, same as Sendspin.
+- **2.4 GHz contention is real.** The Pi's Bluetooth and WiFi share silicon and an
+  antenna path. On 2.4 GHz WiFi you should expect audible dropouts during Bluetooth
+  playback. On 5 GHz or Ethernet it is largely a non-issue.
+
 ## Web UI
 
 - `/` — the now-playing page (server-sent events; no polling from the browser)
@@ -195,6 +250,8 @@ the last reported position.
   (`AIRPLAY_MODE=classic`) more comfortably.
 - Shairport Sync cannot run AirPlay 2 inside a VM whose audio goes through ALSA/PulseAudio
   on the host — the timing requirements aren't met.
+- **Bluetooth takes over the adapter.** Enabling it means the host cannot use Bluetooth
+  at all, and it is the one feature here not verified on real hardware.
 
 ## Troubleshooting
 
@@ -218,6 +275,12 @@ if it conflicts, or set `ENABLE_AIRPLAY=0` to isolate the problem.
 one card; if you set `exclusive`, expect exactly one to work at a time. Check `ALSA_PCM`
 matches `aplay -l`.
 
+**Bluetooth won't start.** `bluetoothd` logging `Failed to access management
+interface` means it cannot reach the adapter: check `NET_ADMIN` is granted, that the
+host's own `bluetooth` service is stopped, and that `hciconfig -a` on the host shows
+the adapter. Nothing pairs? Watch `docker logs` for the `bt-agent` lines — it logs
+every authorisation it accepts.
+
 **Web UI shows "no players detected".** Both players publish MPRIS only once they are
 running; check `supervisorctl status` and the logs for why one exited.
 
@@ -238,6 +301,14 @@ docker run -d --name np -p 8080:8080 \
 
 docker exec -d np env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/dbus/session_bus_socket \
   /opt/venv/bin/python /scripts/fake_mpris.py --name ShairportSync --title "Purple Rain"
+```
+
+[`scripts/fake_bluez.py`](scripts/fake_bluez.py) does the same for the Bluetooth side,
+standing in for BlueZ on the system bus so the AVRCP reader can be exercised without a
+radio:
+
+```bash
+docker exec -d np /opt/venv/bin/python /scripts/fake_bluez.py --alias "Test Phone"
 ```
 
 Override the pinned upstreams:

@@ -22,6 +22,9 @@ services:
     # Lets Shairport Sync raise its own scheduling priority for stable timing.
     cap_add:
       - SYS_NICE
+      # Required only for ENABLE_BLUETOOTH=1, which also needs the host's own
+      # bluetooth service stopped. See the Bluetooth section of the README.
+      #- NET_ADMIN
 
     devices:
       - "/dev/snd:/dev/snd"
