@@ -36,7 +36,8 @@ jobs:
 
       - name: Read pinned upstream versions
         id: versions
-        run: cat versions.env >> "$GITHUB_OUTPUT"
+        # $GITHUB_OUTPUT only accepts KEY=VALUE, so skip comments and blanks.
+        run: grep -E '^[A-Z_]+=' versions.env >> "$GITHUB_OUTPUT"
 
       - name: Decide what to build
         id: plan
