@@ -21,6 +21,8 @@ docker run --rm --entrypoint /bin/bash "$IMAGE" -c '
     shairport-sync -V
     /usr/local/bin/nqptp -V || true
     /opt/venv/bin/sendspin --version
+    spotifyd --version
+    gmediarender --version 2>&1 | head -1
     /opt/venv/bin/python -c "import nowplaying, dbus_fast, aiohttp; print(\"nowplaying\", nowplaying.__version__)"
 '
 

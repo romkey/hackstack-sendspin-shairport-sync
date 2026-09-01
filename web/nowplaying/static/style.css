@@ -6,6 +6,8 @@
   --airplay: #4aa8ff;
   --sendspin: #34d399;
   --bluetooth: #60a5fa;
+  --spotify: #1ed760;
+  --dlna: #fbbf24;
   --other: #a78bfa;
 }
 
@@ -105,6 +107,8 @@ main {
 .badge[data-source="airplay"]  { color: var(--airplay); }
 .badge[data-source="sendspin"] { color: var(--sendspin); }
 .badge[data-source="bluetooth"] { color: var(--bluetooth); }
+.badge[data-source="spotify"] { color: var(--spotify); }
+.badge[data-source="dlna"] { color: var(--dlna); }
 .badge[data-source="other"]    { color: var(--other); }
 
 h1 {
@@ -182,6 +186,8 @@ footer {
 .chip[data-source="airplay"] .dot  { background: var(--airplay); }
 .chip[data-source="sendspin"] .dot { background: var(--sendspin); }
 .chip[data-source="bluetooth"] .dot { background: var(--bluetooth); }
+.chip[data-source="spotify"] .dot   { background: var(--spotify); }
+.chip[data-source="dlna"] .dot      { background: var(--dlna); }
 .chip[data-source="other"] .dot    { background: var(--other); }
 
 @keyframes pulse { 50% { opacity: 0.35; } }

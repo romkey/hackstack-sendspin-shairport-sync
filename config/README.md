@@ -9,6 +9,8 @@ This directory is mounted at `/config` inside the container. It holds three thin
 | `bluetooth.conf` | you | Installed as `/etc/bluetooth/main.conf` instead of the generated BlueZ config |
 | `sendspin/` | the Sendspin daemon | Persistent client settings — volume, delay, remembered servers |
 | `bluetooth/` | BlueZ | Pairing keys, so paired phones survive a rebuild |
+| `spotifyd/` | spotifyd | Spotify Connect credentials and audio cache |
+| `dlna-uuid` | the entrypoint | The renderer's stable UPnP UUID, generated once |
 
 Nothing here is required. With an empty `config/`, the entrypoint generates both
 config files from the environment variables in `.env`, which is enough for most

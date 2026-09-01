@@ -24,6 +24,16 @@ short_hostname() { hostname -s 2>/dev/null || hostname; }
 : "${BLUETOOTH_ADAPTER:=hci0}"
 : "${BLUETOOTH_AUDIO_DEVICE:=default}"
 : "${BLUETOOTH_DISCOVERABLE:=1}"
+: "${ENABLE_SPOTIFY:=0}"
+: "${SPOTIFY_NAME:=${AIRPLAY_NAME}}"
+: "${SPOTIFY_AUDIO_DEVICE:=default}"
+: "${ENABLE_DLNA:=0}"
+: "${DLNA_NAME:=${AIRPLAY_NAME}}"
+: "${DLNA_PORT:=49494}"
+: "${DLNA_AUDIO_DEVICE:=default}"
+: "${DLNA_AUDIO_ONLY:=1}"
+: "${EXTRA_SPOTIFYD_ARGS:=}"
+: "${EXTRA_GMEDIARENDER_ARGS:=}"
 : "${LOG_LEVEL:=info}"
 : "${EXTRA_SHAIRPORT_ARGS:=}"
 : "${EXTRA_SENDSPIN_ARGS:=}"
@@ -260,6 +270,17 @@ if [ "$ENABLE_BLUETOOTH" = "1" ]; then
     program bluealsa-aplay 35 /usr/local/bin/run-bluealsa-aplay.sh
 fi
 
+if [ "$ENABLE_SPOTIFY" = "1" ]; then
+    log "Spotify Connect enabled as \"${SPOTIFY_NAME}\""
+    mkdir -p /config/spotifyd
+    program spotifyd 30 /usr/local/bin/run-spotifyd.sh
+fi
+
+if [ "$ENABLE_DLNA" = "1" ]; then
+    log "DLNA/UPnP renderer enabled as \"${DLNA_NAME}\" on port ${DLNA_PORT}"
+    program gmediarender 30 /usr/local/bin/run-gmediarender.sh
+fi
+
 if [ "$ENABLE_WEB" = "1" ]; then
     program web 40 /usr/local/bin/run-web.sh
 else
@@ -275,7 +296,11 @@ export AIRPLAY_NAME SENDSPIN_NAME AIRPLAY_MODE AUDIO_SHARING ALSA_PCM ALSA_RATE 
     WEB_PORT ENABLE_AIRPLAY ENABLE_SENDSPIN ENABLE_WEB LOG_LEVEL \
     EXTRA_SHAIRPORT_ARGS EXTRA_SENDSPIN_ARGS \
     ENABLE_BLUETOOTH BLUETOOTH_NAME BLUETOOTH_ADAPTER BLUETOOTH_AUDIO_DEVICE \
-    BLUETOOTH_DISCOVERABLE
+    BLUETOOTH_DISCOVERABLE \
+    ENABLE_SPOTIFY SPOTIFY_NAME SPOTIFY_AUDIO_DEVICE SPOTIFY_BITRATE \
+    SPOTIFY_INITIAL_VOLUME SPOTIFY_ZEROCONF_PORT EXTRA_SPOTIFYD_ARGS \
+    ENABLE_DLNA DLNA_NAME DLNA_PORT DLNA_AUDIO_DEVICE DLNA_AUDIO_ONLY \
+    DLNA_INTERFACE EXTRA_GMEDIARENDER_ARGS
 
 log "shairport-sync ${SHAIRPORT_SYNC_VERSION:-?} / nqptp ${NQPTP_VERSION:-?} / sendspin ${SENDSPIN_VERSION:-?}"
 log "AirPlay name: ${AIRPLAY_NAME}   Sendspin name: ${SENDSPIN_NAME}"

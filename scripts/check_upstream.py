@@ -21,6 +21,7 @@ SOURCES = {
     "SHAIRPORT_SYNC_VERSION": ("github", "mikebrady/shairport-sync"),
     "NQPTP_VERSION": ("github", "mikebrady/nqptp"),
     "SENDSPIN_VERSION": ("pypi", "sendspin"),
+    "SPOTIFYD_VERSION": ("github", "Spotifyd/spotifyd"),
 }
 
 

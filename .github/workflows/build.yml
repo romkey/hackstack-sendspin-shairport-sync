@@ -81,6 +81,7 @@ jobs:
             org.opencontainers.image.version.shairport-sync=${{ steps.versions.outputs.SHAIRPORT_SYNC_VERSION }}
             org.opencontainers.image.version.nqptp=${{ steps.versions.outputs.NQPTP_VERSION }}
             org.opencontainers.image.version.sendspin=${{ steps.versions.outputs.SENDSPIN_VERSION }}
+            org.opencontainers.image.version.spotifyd=${{ steps.versions.outputs.SPOTIFYD_VERSION }}
 
       - name: Build and push
         id: push
@@ -97,6 +98,7 @@ jobs:
             SHAIRPORT_SYNC_VERSION=${{ steps.versions.outputs.SHAIRPORT_SYNC_VERSION }}
             NQPTP_VERSION=${{ steps.versions.outputs.NQPTP_VERSION }}
             SENDSPIN_VERSION=${{ steps.versions.outputs.SENDSPIN_VERSION }}
+            SPOTIFYD_VERSION=${{ steps.versions.outputs.SPOTIFYD_VERSION }}
 
       - name: Attest build provenance
         if: steps.plan.outputs.push == 'true'

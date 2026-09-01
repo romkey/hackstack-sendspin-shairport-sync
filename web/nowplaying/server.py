@@ -114,10 +114,16 @@ async def _stop_watcher(app: web.Application) -> None:
     await app[WATCHER_KEY].stop()
 
 
-def create_app(poll_interval: float = 1.0) -> web.Application:
+def create_app(
+    poll_interval: float = 1.0,
+    dlna_port: int | None = None,
+    dlna_url: str | None = None,
+) -> web.Application:
     """Build the aiohttp application."""
     app = web.Application()
-    app[WATCHER_KEY] = PlayerWatcher(poll_interval=poll_interval)
+    app[WATCHER_KEY] = PlayerWatcher(
+        poll_interval=poll_interval, dlna_port=dlna_port, dlna_url=dlna_url
+    )
 
     app.router.add_get("/", handle_index)
     app.router.add_get("/healthz", handle_health)
@@ -131,7 +137,15 @@ def create_app(poll_interval: float = 1.0) -> web.Application:
     return app
 
 
-def run(host: str, port: int, poll_interval: float = 1.0) -> None:
+def run(
+    host: str,
+    port: int,
+    poll_interval: float = 1.0,
+    dlna_port: int | None = None,
+    dlna_url: str | None = None,
+) -> None:
     """Run the server until interrupted."""
     with contextlib.suppress(KeyboardInterrupt):
-        web.run_app(create_app(poll_interval), host=host, port=port, print=None)
+        web.run_app(
+            create_app(poll_interval, dlna_port, dlna_url), host=host, port=port, print=None
+        )

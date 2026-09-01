@@ -33,7 +33,9 @@ whenever upstream moves ahead of them.
 
 - **AirPlay 2** via Shairport Sync + nqptp — play to the Pi from iPhone, iPad, Mac, or HomePod groups.
 - **Sendspin** via the official `sendspin` daemon — the open multi-room protocol used by Music Assistant and Home Assistant.
-- **Bluetooth A2DP** (optional, off by default) — pair a phone and play to the Pi directly, as a third source.
+- **Bluetooth A2DP** (optional, off by default) — pair a phone and play to the Pi directly.
+- **Spotify Connect** (optional, off by default) — the Pi appears in the Spotify app's device picker.
+- **DLNA/UPnP renderer** (optional, off by default) — a "play to" target for Android apps, BubbleUPnP, Plex and most NAS media servers.
 - **One web UI** at `http://<pi>:8080` that shows cover art, title, artist, album and progress for *whichever* source is playing.
 - Both players **sharing the same sound card** through ALSA `dmix`, so you don't have to pick one.
 - Multi-arch images (`linux/amd64`, `linux/arm64`) published to GitHub Container Registry on every push, tag, and upstream release.
@@ -45,24 +47,30 @@ D-Bus interface. The container runs a private D-Bus session bus, points both pla
 and the web UI is simply an MPRIS observer:
 
 ```
-                 ┌───────────────────── container ──────────────────────┐
-  iPhone ──────► │  shairport-sync ──┐                                  │
-  (AirPlay 2)    │  + nqptp          │                                  │
-                 │                   ├─► session bus (MPRIS) ─┐         │
-  Music          │  sendspin daemon ─┘                        │         │
-  Assistant ───► │        │                                   ▼         │
-  (Sendspin)     │        │                        nowplaying web UI ───┼──► :8080
-                 │        │                                   ▲         │
-  Phone ───────► │  bluetoothd + bluealsa ─► system bus (AVRCP)         │
-  (Bluetooth)    │        │                                             │
-                 │        ▼                                             │
-                 │   ALSA dmix ────────────────────────────────────────►│──► 3.5mm jack / DAC
-                 └──────────────────────────────────────────────────────┘
+                  ┌──────────────────── container ─────────────────────┐
+  iPhone ───────► │  shairport-sync ─┐                                 │
+  (AirPlay 2)     │  + nqptp         │                                 │
+                  │                  │                                 │
+  Music           │  sendspin ───────┼─► session bus (MPRIS) ─┐        │
+  Assistant ────► │                  │                        │        │
+                  │  spotifyd ───────┘                        │        │
+  Spotify app ──► │        │                                  ▼        │
+                  │        │                      nowplaying web UI ───┼──► :8080
+  Phone ────────► │  bluetoothd + bluealsa ─► system bus ──►   ▲       │
+  (Bluetooth)     │        │                       (AVRCP)     │       │
+                  │        │                                   │       │
+  BubbleUPnP ───► │  gmediarender ──────────► HTTP/SOAP ───────┘       │
+  (DLNA)          │        │                    (AVTransport)          │
+                  │        ▼                                           │
+                  │   ALSA dmix ──────────────────────────────────────►│──► 3.5mm jack / DAC
+                  └────────────────────────────────────────────────────┘
 ```
 
-Nothing is hard-coded to particular players: any process exporting
-`org.mpris.MediaPlayer2.*` on the session bus shows up in the UI, and so does any
-`org.bluez.MediaPlayer1` on the system bus.
+Three of the five speak MPRIS, so they need no special handling — anything exporting
+`org.mpris.MediaPlayer2.*` on the session bus shows up in the UI automatically. The
+other two are adapted: BlueZ publishes AVRCP metadata as `org.bluez.MediaPlayer1` on
+the system bus, and gmediarender has no bus interface at all, so the UI queries its
+UPnP `AVTransport` service over SOAP exactly as any DLNA controller would.
 
 ## Quick start on a Raspberry Pi
 
@@ -142,6 +150,17 @@ file-level overrides.
 | `BLUETOOTH_ADAPTER` | `hci0` | Which adapter to use |
 | `BLUETOOTH_AUDIO_DEVICE` | `default` | ALSA device Bluetooth audio plays to |
 | `BLUETOOTH_DISCOVERABLE` | `1` | Set `0` to stop advertising once paired |
+| `ENABLE_SPOTIFY` | `0` | Set `1` for Spotify Connect |
+| `SPOTIFY_NAME` | `AIRPLAY_NAME` | Name in the Spotify device picker |
+| `SPOTIFY_AUDIO_DEVICE` | `default` | ALSA device Spotify plays to |
+| `SPOTIFY_INITIAL_VOLUME` | *unset* | Starting volume, 0–100 |
+| `ENABLE_DLNA` | `0` | Set `1` for the DLNA/UPnP renderer |
+| `DLNA_NAME` | `AIRPLAY_NAME` | Name shown in DLNA controllers |
+| `DLNA_PORT` | `49494` | UPnP HTTP port |
+| `DLNA_AUDIO_DEVICE` | `default` | ALSA device DLNA plays to |
+| `DLNA_AUDIO_ONLY` | `1` | Set `0` to also advertise video |
+| `EXTRA_SPOTIFYD_ARGS` | *unset* | Appended to the `spotifyd` command line |
+| `EXTRA_GMEDIARENDER_ARGS` | *unset* | Appended to the `gmediarender` command line |
 | `WEB_PORT` | `8080` | Web UI port |
 | `LOG_LEVEL` | `info` | `debug` for much noisier logs |
 | `EXTRA_SHAIRPORT_ARGS` | *unset* | Appended to the `shairport-sync` command line |
@@ -223,6 +242,43 @@ while the Pi is discoverable. Once your own devices are paired, set
   antenna path. On 2.4 GHz WiFi you should expect audible dropouts during Bluetooth
   playback. On 5 GHz or Ethernet it is largely a non-issue.
 
+## Spotify Connect (optional)
+
+Off by default. With `ENABLE_SPOTIFY=1` the Pi shows up in the Spotify app's device
+picker, and playback is handed off to it the same way as to any Connect speaker.
+
+This runs [spotifyd](https://github.com/Spotifyd/spotifyd), built from source in the
+image. Spotify removed username/password logins, so there are **no credentials to
+configure** — you claim the speaker from the app over the local network. As with any
+Connect device, a **Premium account is required**.
+
+Metadata comes over MPRIS, so title, artist, album, duration and position all appear in
+the web UI. Cover art does not: spotifyd's MPRIS interface doesn't publish an art URL.
+
+> **Not verified against a real account.** The daemon builds, starts and advertises
+> itself over zeroconf, but with no Premium account to claim the speaker with, the audio
+> path is unproven. Note that spotifyd registers its MPRIS name only once a session is
+> active — while idle it is absent from the bus, so it will not appear in the web UI
+> until a phone hands playback to it, the same way Sendspin behaves.
+
+## DLNA / UPnP (optional)
+
+Off by default. With `ENABLE_DLNA=1` the Pi becomes a UPnP media renderer via
+[gmediarender](https://github.com/hzeller/gmrender-resurrect), which is the most useful
+of the optional sources if you have Android devices: AirPlay covers iOS, Spotify Connect
+covers only Spotify, and DLNA covers a long tail of Android apps, BubbleUPnP,
+foobar2000, Plex, Jellyfin and most NAS media servers.
+
+It advertises as audio-only by default, so controllers don't offer it as a video
+display. Its UUID is generated once and kept in `config/dlna-uuid`, so restarts don't
+look like a brand-new device to controllers.
+
+**DLNA is the one optional source that gives you cover art** — controllers send it in
+the track metadata, so the UI shows real artwork rather than the placeholder.
+
+Unlike Bluetooth and Spotify, this one *was* tested end to end: a simulated controller
+pushes a track and the UI renders it.
+
 ## Web UI
 
 - `/` — the now-playing page (server-sent events; no polling from the browser)
@@ -251,7 +307,11 @@ the last reported position.
 - Shairport Sync cannot run AirPlay 2 inside a VM whose audio goes through ALSA/PulseAudio
   on the host — the timing requirements aren't met.
 - **Bluetooth takes over the adapter.** Enabling it means the host cannot use Bluetooth
-  at all, and it is the one feature here not verified on real hardware.
+  at all, and it is not verified on real hardware.
+- **Spotify Connect needs a Premium account**, and is likewise unverified against one.
+  Of the optional sources, only DLNA was testable end to end.
+- **Cover art only comes from AirPlay and DLNA.** Sendspin, Bluetooth and Spotify all
+  publish text metadata but no artwork.
 
 ## Troubleshooting
 
@@ -281,6 +341,15 @@ host's own `bluetooth` service is stopped, and that `hciconfig -a` on the host s
 the adapter. Nothing pairs? Watch `docker logs` for the `bt-agent` lines — it logs
 every authorisation it accepts.
 
+**Spotify doesn't appear in the app.** Connect discovery needs the phone on the same
+subnet as the Pi, host networking (which you have), and a Premium account. Check
+`docker logs` for spotifyd errors, and note that the device only appears while
+spotifyd is running — `supervisorctl status` will say.
+
+**DLNA renderer not found by a controller.** Check the port isn't firewalled and that
+`docker exec sendspin-shareplay curl -s localhost:49494/description.xml` returns XML.
+Some controllers cache devices aggressively; restarting the controller app helps.
+
 **Web UI shows "no players detected".** Both players publish MPRIS only once they are
 running; check `supervisorctl status` and the logs for why one exited.
 
@@ -309,6 +378,15 @@ radio:
 
 ```bash
 docker exec -d np /opt/venv/bin/python /scripts/fake_bluez.py --alias "Test Phone"
+```
+
+And [`scripts/fake_dlna_controller.py`](scripts/fake_dlna_controller.py) acts as a DLNA
+controller: it generates a tone, serves it, and pushes it to the renderer with metadata,
+exactly as BubbleUPnP or a NAS would. `--pause` stops right after starting, which keeps
+the track observable on a machine with no sound card:
+
+```bash
+docker exec -d np /opt/venv/bin/python /scripts/fake_dlna_controller.py --pause --hold 300
 ```
 
 Override the pinned upstreams:
@@ -356,6 +434,8 @@ This project is glue. The real work belongs to:
 
 - [Shairport Sync](https://github.com/mikebrady/shairport-sync) and [nqptp](https://github.com/mikebrady/nqptp) by Mike Brady
 - [Sendspin](https://github.com/Sendspin/sendspin-cli) (formerly Resonate), from the Open Home Foundation / Music Assistant community
+- [spotifyd](https://github.com/Spotifyd/spotifyd) and [librespot](https://github.com/librespot-org/librespot)
+- [gmediarender / gmrender-resurrect](https://github.com/hzeller/gmrender-resurrect) by Henner Zeller
+- [BlueZ](http://www.bluez.org/) and [bluez-alsa](https://github.com/arkq/bluez-alsa)
 
-Licensed under the [MIT License](LICENSE). Shairport Sync, nqptp and Sendspin carry their
-own licenses.
+Licensed under the [MIT License](LICENSE). Each bundled project carries its own license.

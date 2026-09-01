@@ -12,6 +12,7 @@ ARG DEBIAN_SUITE=trixie
 ARG SHAIRPORT_SYNC_VERSION=5.2.3
 ARG NQPTP_VERSION=1.2.8
 ARG SENDSPIN_VERSION=7.5.0
+ARG SPOTIFYD_VERSION=0.4.2
 
 ##############################################################################
 # Stage 1: compile nqptp and shairport-sync
@@ -85,7 +86,32 @@ RUN autoreconf -fi \
     && make install DESTDIR=/out
 
 ##############################################################################
-# Stage 2: build the Python virtualenv (sendspin CLI + the web UI)
+# Stage 2: build spotifyd (Spotify Connect)
+#
+# The published binaries link against OpenSSL 1.1, which Debian trixie does not
+# ship, so build from source. Only the two features we need, which keeps this to
+# roughly two minutes even under emulation.
+##############################################################################
+FROM rust:1-trixie AS spotifyd-builder
+
+ARG SPOTIFYD_VERSION
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libasound2-dev \
+        libdbus-1-dev \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN cargo install spotifyd \
+        --version "${SPOTIFYD_VERSION}" \
+        --locked \
+        --no-default-features \
+        --features alsa_backend,dbus_mpris \
+        --root /out
+
+##############################################################################
+# Stage 3: build the Python virtualenv (sendspin CLI + the web UI)
 ##############################################################################
 FROM debian:${DEBIAN_SUITE}-slim AS python-builder
 
@@ -112,13 +138,14 @@ COPY web /src/web
 RUN pip install --no-cache-dir /src/web
 
 ##############################################################################
-# Stage 3: runtime
+# Stage 4: runtime
 ##############################################################################
 FROM debian:${DEBIAN_SUITE}-slim
 
 ARG SHAIRPORT_SYNC_VERSION
 ARG NQPTP_VERSION
 ARG SENDSPIN_VERSION
+ARG SPOTIFYD_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -128,6 +155,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         bluez-alsa-utils \
         ca-certificates \
         dbus \
+        gmediarender \
+        gstreamer1.0-alsa \
+        gstreamer1.0-libav \
+        gstreamer1.0-plugins-base \
+        gstreamer1.0-plugins-good \
         libasound2t64 \
         libavahi-client3 \
         libavcodec61 \
@@ -135,6 +167,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libavutil59 \
         libswresample5 \
         libconfig11 \
+        libdbus-1-3 \
         libgcrypt20 \
         libglib2.0-0t64 \
         libplist-2.0-4 \
@@ -153,6 +186,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=native-builder /out/usr/local/bin/nqptp /usr/local/bin/nqptp
 COPY --from=native-builder /out/usr/local/bin/shairport-sync /usr/local/bin/shairport-sync
 COPY --from=native-builder /out/etc/shairport-sync.conf.sample /etc/shairport-sync.conf.sample
+COPY --from=spotifyd-builder /out/bin/spotifyd /usr/local/bin/spotifyd
 COPY --from=python-builder /opt/venv /opt/venv
 COPY rootfs /
 
@@ -161,13 +195,17 @@ ENV PATH="/opt/venv/bin:$PATH" \
     XDG_CONFIG_HOME=/config \
     SHAIRPORT_SYNC_VERSION=${SHAIRPORT_SYNC_VERSION} \
     NQPTP_VERSION=${NQPTP_VERSION} \
-    SENDSPIN_VERSION=${SENDSPIN_VERSION}
+    SENDSPIN_VERSION=${SENDSPIN_VERSION} \
+    SPOTIFYD_VERSION=${SPOTIFYD_VERSION}
 
 # --- tunables (see README) ---------------------------------------------------
 ENV ENABLE_AIRPLAY=1 \
     ENABLE_SENDSPIN=1 \
     ENABLE_WEB=1 \
     ENABLE_BLUETOOTH=0 \
+    ENABLE_SPOTIFY=0 \
+    ENABLE_DLNA=0 \
+    DLNA_PORT=49494 \
     BLUETOOTH_ADAPTER=hci0 \
     BLUETOOTH_AUDIO_DEVICE=default \
     BLUETOOTH_DISCOVERABLE=1 \

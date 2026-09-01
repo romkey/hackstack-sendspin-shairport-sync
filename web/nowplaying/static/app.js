@@ -24,6 +24,8 @@
     airplay: "AirPlay",
     sendspin: "Sendspin",
     bluetooth: "Bluetooth",
+    spotify: "Spotify Connect",
+    dlna: "DLNA",
     other: "MPRIS",
   };
 
@@ -77,7 +79,7 @@
     dom.players.replaceChildren(
       ...players.map((p) => {
         const chip = document.createElement("span");
-        chip.className = "chip" + (p.bus_name === activeName ? " active" : "");
+        chip.className = "chip" + (p.id === activeName ? " active" : "");
         chip.dataset.source = p.source;
         chip.dataset.status = p.status;
 
@@ -97,7 +99,7 @@
 
   function render(state) {
     const players = state.players || [];
-    const active = players.find((p) => p.bus_name === state.active) || null;
+    const active = players.find((p) => p.id === state.active) || null;
     renderChips(players, state.active);
 
     const hasTrack = active && (active.title || active.artist || active.album);
