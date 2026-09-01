@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
   "aiohttp>=3.9.2",
-  "dbus-fast>=2.24.0",
+  "dbus-fast>=5.0.22",
 ]
 
 [tool.setuptools.packages.find]
