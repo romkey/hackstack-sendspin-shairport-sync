@@ -110,7 +110,9 @@ jobs:
         if: steps.plan.outputs.push == 'true'
         run: |
           mkdir -p "${{ runner.temp }}/digests"
-          touch "${{ runner.temp }}/digests/${{ steps.build.outputs.digest }}"
+          # The bare hex only: upload-artifact rejects ":" in file names.
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
 
       - name: Upload the digest
         if: steps.plan.outputs.push == 'true'
@@ -171,7 +173,7 @@ jobs:
           # shellcheck disable=SC2046
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@%s ' *)
+            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
 
       - name: Read the index digest
         id: index
