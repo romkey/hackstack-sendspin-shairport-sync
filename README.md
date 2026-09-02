@@ -546,6 +546,14 @@ interface` means it cannot reach the adapter: check `NET_ADMIN` is granted, that
 host's own `bluetooth` service is stopped, and that `hciconfig -a` on the host shows
 the adapter.
 
+**`bluealsa: Couldn't acquire D-Bus name … org.bluealsa`.** Owning a name on the D-Bus
+system bus requires a policy file permitting it, and `bluealsa.conf` ships with
+`bluez-alsa`, which is installed in this container and not on the host. So when Avahi is
+in host mode and the whole container used the host's bus, BlueALSA could never register.
+BlueZ and BlueALSA now always use a system bus of their own, on a private socket, while
+Shairport Sync keeps using the host's bus for Avahi. Fixed in 0.6.5; nothing to
+configure.
+
 **`Failed to set mode: Failed (0x03)`, with BlueALSA reporting `Network is down`.**
 The adapter is present but cannot be powered on, which is almost always an rfkill soft
 block. Map `/dev/rfkill` into the container — the entrypoint then clears the block

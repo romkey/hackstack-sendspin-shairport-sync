@@ -400,7 +400,7 @@ stdout_logfile_maxbytes=0
 redirect_stderr=true
 stopasgroup=true
 killasgroup=true
-environment=DBUS_SESSION_BUS_ADDRESS="unix:path=/run/sendspin-shareplay/session_bus_socket",${SYSTEM_BUS_ENV}PATH="/opt/venv/bin:/usr/local/bin:/usr/bin:/bin",HOME="/root"
+environment=DBUS_SESSION_BUS_ADDRESS="unix:path=/run/sendspin-shareplay/session_bus_socket",${PROGRAM_BUS_ENV}PATH="/opt/venv/bin:/usr/local/bin:/usr/bin:/bin",HOME="/root"
 PROG
 }
 
@@ -408,14 +408,28 @@ resolve_avahi_mode
 
 # program() bakes these into each supervisor entry, so they must be set before
 # the first call.
+PRIVATE_BUS_ENV="DBUS_SYSTEM_BUS_ADDRESS=\"unix:path=${PRIVATE_SYSTEM_BUS}\","
+
 if [ "$AVAHI_MODE" = "host" ]; then
     SYSTEM_BUS_SOCKET=/run/dbus/system_bus_socket
-    SYSTEM_BUS_ENV=""
+    AVAHI_BUS_ENV=""
 else
     SYSTEM_BUS_SOCKET="$PRIVATE_SYSTEM_BUS"
-    SYSTEM_BUS_ENV="DBUS_SYSTEM_BUS_ADDRESS=\"unix:path=${PRIVATE_SYSTEM_BUS}\","
+    AVAHI_BUS_ENV="$PRIVATE_BUS_ENV"
 fi
-export SYSTEM_BUS_SOCKET
+
+# BlueZ and BlueALSA always use our own bus, never the host's. Owning a name on
+# the system bus needs a policy file permitting it, and the host has policy for
+# org.bluez only if BlueZ is installed there and never for org.bluealsa -- so on
+# the host's bus BlueALSA fails with "Couldn't acquire D-Bus name". Our bus has
+# both policies, because both packages are installed here.
+BT_BUS_ENV="$PRIVATE_BUS_ENV"
+BT_BUS_SOCKET="$PRIVATE_SYSTEM_BUS"
+export SYSTEM_BUS_SOCKET BT_BUS_SOCKET
+
+# program() bakes this into each supervisor entry; callers reassign it around
+# the Bluetooth programs, which need a different bus.
+PROGRAM_BUS_ENV="$AVAHI_BUS_ENV"
 
 write_asound_conf
 write_shairport_conf
@@ -429,6 +443,11 @@ if [ "$AVAHI_MODE" = "host" ]; then
     # The host's Avahi and D-Bus are mounted in. Running our own would fight the
     # host's daemon for the machine's .local name, renaming itself forever.
     log "mDNS: using the host's avahi-daemon"
+    if [ "$ENABLE_BLUETOOTH" = "1" ]; then
+        # Still need a bus of our own for BlueZ and BlueALSA.
+        rm -f "$PRIVATE_SYSTEM_BUS"
+        program dbus-system 10 /usr/bin/dbus-daemon --system --nofork --nopidfile --address="unix:path=${PRIVATE_SYSTEM_BUS}"
+    fi
 else
     log "mDNS: running avahi-daemon inside the container"
     log "  If the host also runs avahi-daemon, the two will fight over the same"
@@ -461,10 +480,12 @@ fi
 
 if [ "$ENABLE_BLUETOOTH" = "1" ]; then
     log "Bluetooth A2DP sink enabled as \"${BLUETOOTH_NAME}\" on ${BLUETOOTH_ADAPTER}"
+    PROGRAM_BUS_ENV="$BT_BUS_ENV"
     program bluetoothd 20 /usr/local/bin/run-bluetoothd.sh
     program bluealsa 25 /usr/local/bin/run-bluealsa.sh
     program bt-agent 30 /usr/local/bin/run-bt-agent.sh
     program bluealsa-aplay 35 /usr/local/bin/run-bluealsa-aplay.sh
+    PROGRAM_BUS_ENV="$AVAHI_BUS_ENV"
 fi
 
 if [ "$ENABLE_SPOTIFY" = "1" ]; then
@@ -487,7 +508,12 @@ if [ "$ENABLE_MQTT" = "1" ]; then
 fi
 
 if [ "$ENABLE_WEB" = "1" ]; then
+    if [ "$ENABLE_BLUETOOTH" = "1" ]; then
+        # The UI reads org.bluez.MediaPlayer1, which lives on the Bluetooth bus.
+        PROGRAM_BUS_ENV="$BT_BUS_ENV"
+    fi
     program web 40 /usr/local/bin/run-web.sh
+    PROGRAM_BUS_ENV="$AVAHI_BUS_ENV"
 else
     log "Web UI disabled (ENABLE_WEB=0)"
 fi

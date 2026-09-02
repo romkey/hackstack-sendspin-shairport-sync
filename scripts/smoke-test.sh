@@ -29,12 +29,13 @@ docker run --rm --entrypoint /bin/bash "$IMAGE" -c '
 # The entrypoint takes a different branch per Avahi mode, and a bug in the one
 # not exercised here shipped once already: host mode died with exit 127 while
 # container mode was fine. Boot both.
-echo "--- booting in host Avahi mode"
+echo "--- booting in host Avahi mode, with Bluetooth"
 docker run -d --name "${NAME}-host" \
     -e ENABLE_AIRPLAY=0 \
     -e ENABLE_SENDSPIN=0 \
     -e AUDIO_SHARING=none \
     -e AVAHI_MODE=host \
+    -e ENABLE_BLUETOOTH=1 \
     -e ENABLE_WEB=0 \
     "$IMAGE" >/dev/null
 sleep 8
@@ -45,7 +46,24 @@ if [ "$state" != "running" ]; then
     exit 1
 fi
 docker exec "${NAME}-host" supervisorctl status >/dev/null
-echo "host mode starts cleanly"
+
+# BlueALSA has to use our own bus even when Avahi uses the host's: owning
+# org.bluealsa needs a policy file, and a host without bluez-alsa installed has
+# none, so on the host's bus it exits with "Couldn't acquire D-Bus name".
+if ! docker exec "${NAME}-host" grep -q "DBUS_SYSTEM_BUS_ADDRESS=\"unix:path=/run/sendspin-shareplay/system_bus_socket\"" \
+        /etc/supervisor/conf.d/bluealsa.conf; then
+    echo "bluealsa is not pointed at our own system bus:" >&2
+    docker exec "${NAME}-host" cat /etc/supervisor/conf.d/bluealsa.conf >&2
+    exit 1
+fi
+
+# Shairport Sync must keep using the host's bus, or it loses the host's Avahi.
+if docker exec "${NAME}-host" grep -q DBUS_SYSTEM_BUS_ADDRESS \
+        /etc/supervisor/conf.d/shairport-sync.conf; then
+    echo "shairport-sync was given a system bus override; it needs the host's" >&2
+    exit 1
+fi
+echo "host mode starts cleanly, with the buses split correctly"
 
 echo "--- booting with audio disabled"
 docker run -d --name "$NAME" \
