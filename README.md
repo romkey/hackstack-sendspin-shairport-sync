@@ -161,6 +161,9 @@ file-level overrides.
 | `DLNA_AUDIO_ONLY` | `1` | Set `0` to also advertise video |
 | `EXTRA_SPOTIFYD_ARGS` | *unset* | Appended to the `spotifyd` command line |
 | `EXTRA_GMEDIARENDER_ARGS` | *unset* | Appended to the `gmediarender` command line |
+| `AVAHI_MODE` | `auto` | `auto`, `host` or `container` — see [mDNS](#mdns-and-the-hosts-avahi) |
+| `AVAHI_INTERFACES` | default route's | Comma-separated interfaces Avahi may announce on |
+| `AVAHI_HOST_NAME` | system hostname | Override the `.local` name in container mode |
 | `WEB_PORT` | `8080` | Web UI port |
 | `LOG_LEVEL` | `info` | `debug` for much noisier logs |
 | `EXTRA_SHAIRPORT_ARGS` | *unset* | Appended to the `shairport-sync` command line |
@@ -185,6 +188,44 @@ docker compose -f docker-compose.prod.yml restart
 Sendspin's own persistent settings live in `config/sendspin/`. See
 [`config/README.md`](config/README.md) for the details, including which `.env`
 variables a config file overrides.
+
+## mDNS and the host's Avahi
+
+AirPlay, Spotify Connect and DLNA all announce themselves over mDNS, and with host
+networking there is only one network stack to announce on. **Raspberry Pi OS runs
+`avahi-daemon` by default**, so if the container starts a second one the two fight over
+the machine's `.local` name and rename each other in a loop:
+
+```
+Host name conflict, retrying with heavy-metal-5
+Host name conflict, retrying with heavy-metal-6
+```
+
+The compose files therefore mount the host's Avahi and D-Bus sockets:
+
+```yaml
+volumes:
+  - /var/run/dbus:/var/run/dbus
+  - /var/run/avahi-daemon:/var/run/avahi-daemon
+```
+
+With both present the container detects them and uses the host's daemon instead of
+starting its own — services register against the host's Avahi and the name stays
+`heavy-metal.local`. `AVAHI_MODE` controls this:
+
+| Value | Behaviour |
+| --- | --- |
+| `auto` (default) | Use the host's daemon when both sockets are mounted, otherwise run one inside the container |
+| `host` | Always use the host's daemon; fails to advertise if the sockets are missing |
+| `container` | Always run our own — correct only when the host has no `avahi-daemon` |
+
+**Docker bridge addresses.** In container mode Avahi would otherwise announce every
+interface it can see, including `docker0`, `br-*` and `veth*`. An AirPlay client that
+picks `172.17.0.1` out of that list simply fails to connect. The entrypoint restricts
+announcements to the interface carrying the default route; override with
+`AVAHI_INTERFACES=wlan0,eth0` if that guess is wrong. If the host's own Avahi has the
+same problem, fix it in the host's `/etc/avahi/avahi-daemon.conf` — that one is outside
+this container's control.
 
 ## Sharing one sound card
 
@@ -326,6 +367,11 @@ docker exec sendspin-shareplay dbus-send --session --print-reply \
   org.freedesktop.DBus.ListNames | grep mpris
 ```
 
+**Endless `Host name conflict, retrying with <host>-5`.** Two Avahi daemons are
+fighting: the host's and the container's. Mount `/var/run/dbus` and
+`/var/run/avahi-daemon` as the compose files do, and the container will use the host's
+instead. See [mDNS](#mdns-and-the-hosts-avahi).
+
 **No AirPlay speaker appears.** Confirm host networking, then check that nothing else on
 the Pi already owns ports 319/320 (`sudo ss -lunp | grep -E '319|320'`) — a host `ptpd`
 or another Shairport Sync install will block nqptp. Also stop the host's `avahi-daemon`
@@ -368,7 +414,7 @@ docker run -d --name np -p 8080:8080 \
   -e ENABLE_AIRPLAY=0 -e ENABLE_SENDSPIN=0 -e AUDIO_SHARING=none \
   -v "$PWD/scripts:/scripts:ro" sendspin-shareplay:dev
 
-docker exec -d np env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/dbus/session_bus_socket \
+docker exec -d np env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/sendspin-shareplay/session_bus_socket \
   /opt/venv/bin/python /scripts/fake_mpris.py --name ShairportSync --title "Purple Rain"
 ```
 

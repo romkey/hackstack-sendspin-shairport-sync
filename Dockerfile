@@ -207,7 +207,7 @@ COPY --from=python-builder /opt/venv /opt/venv
 COPY rootfs /
 
 ENV PATH="/opt/venv/bin:$PATH" \
-    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/session_bus_socket" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/sendspin-shareplay/session_bus_socket" \
     XDG_CONFIG_HOME=/config \
     SHAIRPORT_SYNC_VERSION=${SHAIRPORT_SYNC_VERSION} \
     NQPTP_VERSION=${NQPTP_VERSION} \
@@ -233,7 +233,7 @@ ENV ENABLE_AIRPLAY=1 \
     SENDSPIN_AUDIO_DEVICE=default \
     WEB_PORT=8080
 
-RUN mkdir -p /run/dbus /run/bluetooth /config /var/lib/shairport-sync/coverart \
+RUN mkdir -p /run/dbus /run/bluetooth /run/sendspin-shareplay /config /var/lib/shairport-sync/coverart \
     && chmod +x /usr/local/bin/*.sh
 
 VOLUME ["/config"]

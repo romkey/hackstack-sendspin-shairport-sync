@@ -50,7 +50,7 @@ echo
 curl -fsS "http://127.0.0.1:${PORT}/" | grep -q "Now Playing"
 
 echo "--- checking D-Bus and generated config"
-docker exec "$NAME" test -S /run/dbus/session_bus_socket
+docker exec "$NAME" test -S /run/sendspin-shareplay/session_bus_socket
 docker exec "$NAME" test -f /etc/shairport-sync.conf
 
 echo "smoke test passed"

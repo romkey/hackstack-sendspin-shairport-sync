@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 . /usr/local/bin/wait-for.sh
-wait_for_file /run/dbus/session_bus_socket "the D-Bus session bus"
+wait_for_file /run/sendspin-shareplay/session_bus_socket "the D-Bus session bus"
 wait_for_file /run/avahi-daemon/socket "avahi-daemon"
 
 args=(-c /etc/shairport-sync.conf)

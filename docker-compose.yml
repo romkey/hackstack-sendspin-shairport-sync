@@ -45,6 +45,13 @@ services:
       # SENDSPIN_URL: "ws://192.168.1.10:8927/sendspin"
 
     volumes:
+      # Use the host's Avahi rather than running a second one. Raspberry Pi OS
+      # runs avahi-daemon by default, and with host networking two daemons fight
+      # over the same .local name, renaming each other in a loop. With these
+      # mounted the container detects and uses the host's daemon.
+      # Remove them only if the host has no avahi-daemon of its own.
+      - /var/run/dbus:/var/run/dbus
+      - /var/run/avahi-daemon:/var/run/avahi-daemon
       - ./config:/config
 
     logging:

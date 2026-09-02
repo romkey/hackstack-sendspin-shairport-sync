@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 . /usr/local/bin/wait-for.sh
-wait_for_file /run/dbus/session_bus_socket "the D-Bus session bus"
+wait_for_file /run/sendspin-shareplay/session_bus_socket "the D-Bus session bus"
 
 # Spotify killed username/password logins, so this relies entirely on Spotify
 # Connect discovery: the speaker advertises itself and the phone app claims it.

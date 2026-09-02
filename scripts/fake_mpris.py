@@ -5,7 +5,7 @@ Run it inside the container (it needs ``dbus-fast`` from /opt/venv):
 
     docker run ... -v "$PWD/scripts:/scripts:ro" ...
     docker exec -it sendspin-shareplay \\
-        env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/dbus/session_bus_socket \\
+        env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/sendspin-shareplay/session_bus_socket \\
         /opt/venv/bin/python /scripts/fake_mpris.py --name Sendspin
 """
 

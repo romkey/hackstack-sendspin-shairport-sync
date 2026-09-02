@@ -6,6 +6,7 @@ This directory is mounted at `/config` inside the container. It holds three thin
 | --- | --- | --- |
 | `shairport-sync.conf` | you | Used verbatim instead of the config the entrypoint generates from `.env` |
 | `asound.conf` | you | Installed as `/etc/asound.conf` instead of the generated ALSA setup |
+| `avahi-daemon.conf` | you | Used instead of the generated Avahi config, container mode only |
 | `bluetooth.conf` | you | Installed as `/etc/bluetooth/main.conf` instead of the generated BlueZ config |
 | `sendspin/` | the Sendspin daemon | Persistent client settings — volume, delay, remembered servers |
 | `bluetooth/` | BlueZ | Pairing keys, so paired phones survive a rebuild |
