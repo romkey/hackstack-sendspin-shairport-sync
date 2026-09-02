@@ -55,6 +55,10 @@ services:
       - ./config:/config
 
     logging:
+      # Pinned explicitly: max-size and max-file are json-file/local options, and
+      # passing them to a daemon whose default driver is journald fails with
+      # "unknown log opt 'max-file'".
+      driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
