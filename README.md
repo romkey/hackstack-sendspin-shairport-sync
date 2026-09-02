@@ -384,6 +384,35 @@ the track metadata, so the UI shows real artwork rather than the placeholder.
 Unlike Bluetooth and Spotify, this one *was* tested end to end: a simulated controller
 pushes a track and the UI renders it.
 
+### Adding it to Home Assistant
+
+Home Assistant's [DLNA DMR](https://www.home-assistant.io/integrations/dlna_dmr/)
+integration usually finds renderers by itself over SSDP. When it doesn't, it asks for
+the URL of the device description rather than an address — that URL is:
+
+```
+http://<pi-ip>:49494/description.xml
+```
+
+Adjust the port if you changed `DLNA_PORT`. Check it first from any machine on the
+network:
+
+```bash
+curl -s http://<pi-ip>:49494/description.xml | grep friendlyName
+```
+
+If that returns your speaker's name, paste the same URL into Home Assistant and you get
+a real `media_player` entity with transport controls.
+
+**Why discovery often fails:** SSDP is multicast and does not cross subnets or VLANs, so
+if Home Assistant is not on the same one as the Pi it will never see the renderer.
+Entering the URL by hand is the correct fix, not a workaround — the renderer itself is
+reachable over plain HTTP regardless of subnet. Some controllers also cache devices
+aggressively; restarting the app helps.
+
+Note this entity only reflects *DLNA* playback. For AirPlay, Sendspin, Bluetooth and
+Spotify in one place, use the [MQTT integration](#home-assistant-optional) instead.
+
 ## Home Assistant (optional)
 
 Off by default. Set `ENABLE_MQTT=1` and `MQTT_HOST`, and the speaker appears in Home
