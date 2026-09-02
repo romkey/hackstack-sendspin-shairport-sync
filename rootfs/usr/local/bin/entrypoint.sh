@@ -6,8 +6,10 @@ log() { printf '[entrypoint] %s\n' "$*"; }
 
 short_hostname() { hostname -s 2>/dev/null || hostname; }
 
+# The speaker's name. Every other service defaults to it, so it is the only
+# name that has to be set.
 : "${AIRPLAY_NAME:=$(short_hostname)}"
-: "${SENDSPIN_NAME:=$(short_hostname)}"
+: "${SENDSPIN_NAME:=${AIRPLAY_NAME}}"
 : "${AIRPLAY_MODE:=airplay2}"
 : "${AUDIO_SHARING:=dmix}"
 : "${ALSA_PCM:=hw:0,0}"

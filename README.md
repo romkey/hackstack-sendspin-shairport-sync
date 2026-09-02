@@ -129,10 +129,16 @@ Everything is environment variables. Copy [`.env.example`](.env.example) to `.en
 it lists every variable below with notes — and mount `/config` for persistence and
 file-level overrides.
 
+**Set `AIRPLAY_NAME` and you are done naming things.** Sendspin, Bluetooth, Spotify,
+DLNA and the Home Assistant device all fall back to it, so the speaker appears under one
+name everywhere. Each can still be overridden individually. The exception is
+`AVAHI_HOST_NAME`, which is the machine's mDNS host name rather than the speaker's name
+and so follows the hostname instead.
+
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `AIRPLAY_NAME` | container hostname | Name shown in AirPlay pickers |
-| `SENDSPIN_NAME` | container hostname | Name shown in Music Assistant |
+| `AIRPLAY_NAME` | container hostname | Name shown in AirPlay pickers, **and the default for every other name below** |
+| `SENDSPIN_NAME` | `AIRPLAY_NAME` | Name shown in Music Assistant |
 | `ENABLE_AIRPLAY` | `1` | Set `0` to run Sendspin only |
 | `ENABLE_SENDSPIN` | `1` | Set `0` to run AirPlay only |
 | `ENABLE_WEB` | `1` | Set `0` to drop the web UI |
