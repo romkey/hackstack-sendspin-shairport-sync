@@ -164,6 +164,7 @@ file-level overrides.
 | `AVAHI_MODE` | `auto` | `auto`, `host` or `container` — see [mDNS](#mdns-and-the-hosts-avahi) |
 | `AVAHI_INTERFACES` | real interfaces | Comma-separated interfaces Avahi may announce on |
 | `AVAHI_HOST_NAME` | system hostname | Override the `.local` name in container mode |
+| `AVAHI_PUBLISH_ADDRESSES` | `auto` | `no` when another mDNS responder is detected, else `yes` |
 | `WEB_PORT` | `8080` | Web UI port |
 | `LOG_LEVEL` | `info` | `debug` for much noisier logs |
 | `EXTRA_SHAIRPORT_ARGS` | *unset* | Appended to the `shairport-sync` command line |
@@ -218,6 +219,28 @@ starting its own — services register against the host's Avahi and the name sta
 | `auto` (default) | Use the host's daemon if it actually answers on the system bus, otherwise run one inside the container |
 | `host` | Always use the host's daemon; fails to advertise if the sockets are missing |
 | `container` | Always run our own — correct only when the host has no `avahi-daemon` |
+
+**If something else is already doing mDNS.** Some systems answer mDNS with
+`systemd-resolved` rather than Avahi. Two responders cannot share one IP address: they
+collide on the reverse record for it, which Avahi reports as a host name conflict and
+tries to fix by renaming itself — `heavy-metal-shareplay-2`, `-3`, `-4`, without ever
+settling, because renaming cannot resolve an address collision.
+
+When the container detects another responder on port 5353 it starts Avahi with
+`publish-addresses=no` and points its services at the host's existing name. Services are
+then published by our Avahi and the address is answered by the stack that already owns
+it, so clients browse *and* resolve normally. `AVAHI_PUBLISH_ADDRESSES=yes|no|auto`
+overrides the detection.
+
+That works, but it is a workaround for a host that is running two mDNS stacks. The
+cleaner fix is to pick one — either install `avahi-daemon` on the host and mount its
+sockets, or turn off `systemd-resolved`'s mDNS:
+
+```bash
+sudo apt install avahi-daemon && sudo systemctl enable --now avahi-daemon
+printf '[Resolve]\nMulticastDNS=no\n' | sudo tee /etc/systemd/resolved.conf.d/no-mdns.conf
+sudo systemctl restart systemd-resolved
+```
 
 Detection asks the system bus whether `org.freedesktop.Avahi` has an owner, rather than
 just checking that the sockets exist — a mounted socket with nothing behind it is exactly
@@ -383,10 +406,11 @@ host with `systemctl is-active avahi-daemon` and
 Since 0.5.1 the container detects this and runs its own daemon instead, so it should no
 longer be fatal — set `AVAHI_MODE=container` to force that behaviour.
 
-**Endless `Host name conflict, retrying with <host>-5`.** Two Avahi daemons are
-fighting: the host's and the container's. Mount `/var/run/dbus` and
-`/var/run/avahi-daemon` as the compose files do, and the container will use the host's
-instead. See [mDNS](#mdns-and-the-hosts-avahi).
+**Endless `Host name conflict, retrying with <host>-5`.** Two mDNS responders are
+fighting over one IP address. Look for `Detected another IPv4 mDNS stack running on this
+host` just above it. Since 0.5.2 the container detects this and publishes services
+without address records, which stops the loop — see [mDNS](#mdns-and-the-hosts-avahi)
+for how to fix it properly on the host.
 
 **No AirPlay speaker appears.** Confirm host networking, then check that nothing else on
 the Pi already owns ports 319/320 (`sudo ss -lunp | grep -E '319|320'`) — a host `ptpd`

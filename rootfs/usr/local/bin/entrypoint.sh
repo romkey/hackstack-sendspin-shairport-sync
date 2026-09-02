@@ -38,6 +38,7 @@ short_hostname() { hostname -s 2>/dev/null || hostname; }
 : "${AVAHI_MODE:=auto}"
 : "${AVAHI_HOST_NAME:=}"
 : "${AVAHI_INTERFACES:=}"
+: "${AVAHI_PUBLISH_ADDRESSES:=auto}"
 : "${EXTRA_SHAIRPORT_ARGS:=}"
 : "${EXTRA_SENDSPIN_ARGS:=}"
 
@@ -202,6 +203,16 @@ lan_interfaces() {
 # The sockets existing is not proof the daemon answers: the mount can be stale,
 # Avahi can be built or configured without D-Bus, or the bus can refuse us.
 # shairport-sync treats a failed Avahi client as fatal, so check before choosing.
+# Any other mDNS responder already listening on 5353 in this network namespace:
+# systemd-resolved, mDNSResponder, or another Avahi. Two responders cannot both
+# own the host's address records -- they collide on the reverse PTR for the
+# shared IP, which Avahi reports as a host name conflict and "resolves" by
+# renaming itself, forever. 5353 == 0x14E9.
+another_mdns_stack() {
+    awk 'NR > 1 { split($2, a, ":"); if (a[2] == "14E9") { found = 1 } }
+         END { exit !found }' /proc/net/udp /proc/net/udp6 2>/dev/null
+}
+
 avahi_on_the_bus() {
     [ -S /run/dbus/system_bus_socket ] || return 1
     dbus-send --system --dest=org.freedesktop.DBus --type=method_call --print-reply \
@@ -229,12 +240,8 @@ resolve_avahi_mode() {
 
     AVAHI_MODE=container
     if [ -S /run/avahi-daemon/socket ] || [ -S /run/dbus/system_bus_socket ]; then
-        # The host looked like it had Avahi but it is not usable over D-Bus.
-        # Run our own, under a name of its own so the two cannot collide.
-        : "${AVAHI_HOST_NAME:=$(short_hostname)-shareplay}"
-        log "NOTE: the host's D-Bus or Avahi socket is mounted but Avahi does not answer"
-        log "  on the bus, so a local avahi-daemon will run as \"${AVAHI_HOST_NAME}\""
-        log "  to avoid colliding with the host's .local name."
+        log "NOTE: the host's D-Bus or Avahi socket is mounted, but Avahi does not answer"
+        log "  on the bus, so a local avahi-daemon will run instead."
     fi
 }
 
@@ -245,11 +252,33 @@ write_avahi_conf() {
         return
     fi
 
+
+    # With another responder already on 5353, publishing our own address records
+    # collides with it no matter what we are called. Publish services only and
+    # let the existing stack answer for the host's address -- services still
+    # resolve, because they point at the same host name it already owns.
+    local publish_addresses="$AVAHI_PUBLISH_ADDRESSES"
+    if [ "$publish_addresses" = "auto" ]; then
+        if another_mdns_stack; then
+            publish_addresses="no"
+            log "another mDNS responder is already running on this host"
+            log "  (systemd-resolved, most likely). Publishing services only, under"
+            log "  \"$(short_hostname).local\", and leaving addresses to it."
+            log "  For a cleaner setup, either run avahi-daemon on the host and mount"
+            log "  its sockets, or turn off the other stack's mDNS."
+        else
+            publish_addresses="yes"
+        fi
+    fi
+
     local host_name_line=""
     if [ -n "$AVAHI_HOST_NAME" ]; then
         host_name_line="host-name=${AVAHI_HOST_NAME}"
+    elif [ "$publish_addresses" = "no" ]; then
+        # Services have to advertise the name the other responder publishes an
+        # address for, or clients browse them and then fail to resolve.
+        host_name_line="host-name=$(short_hostname)"
     fi
-
     local interfaces="${AVAHI_INTERFACES}"
     if [ -z "$interfaces" ]; then
         interfaces="$(lan_interfaces)"
@@ -278,6 +307,7 @@ ratelimit-burst=1000
 enable-wide-area=yes
 
 [publish]
+publish-addresses=${publish_addresses}
 publish-hinfo=no
 publish-workstation=no
 
@@ -450,7 +480,8 @@ export AIRPLAY_NAME SENDSPIN_NAME AIRPLAY_MODE AUDIO_SHARING ALSA_PCM ALSA_RATE 
     SPOTIFY_INITIAL_VOLUME SPOTIFY_ZEROCONF_PORT EXTRA_SPOTIFYD_ARGS \
     ENABLE_DLNA DLNA_NAME DLNA_PORT DLNA_AUDIO_DEVICE DLNA_AUDIO_ONLY \
     DLNA_INTERFACE EXTRA_GMEDIARENDER_ARGS \
-    AVAHI_MODE AVAHI_HOST_NAME AVAHI_INTERFACES SYSTEM_BUS_SOCKET
+    AVAHI_MODE AVAHI_HOST_NAME AVAHI_INTERFACES AVAHI_PUBLISH_ADDRESSES \
+    SYSTEM_BUS_SOCKET
 
 log "shairport-sync ${SHAIRPORT_SYNC_VERSION:-?} / nqptp ${NQPTP_VERSION:-?} / sendspin ${SENDSPIN_VERSION:-?}"
 log "AirPlay name: ${AIRPLAY_NAME}   Sendspin name: ${SENDSPIN_NAME}"
