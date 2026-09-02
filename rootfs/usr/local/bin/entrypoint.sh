@@ -42,6 +42,9 @@ short_hostname() { hostname -s 2>/dev/null || hostname; }
 : "${EXTRA_SENDSPIN_ARGS:=}"
 
 CONF_D=/etc/supervisor/conf.d
+# Our own system bus must never bind the shared /run/dbus path: in host mode that
+# directory is the host's, and replacing its socket would break the host's D-Bus.
+PRIVATE_SYSTEM_BUS=/run/sendspin-shareplay/system_bus_socket
 mkdir -p "$CONF_D" /run/dbus /run/sendspin-shareplay /config/sendspin /var/lib/shairport-sync/coverart
 rm -f "$CONF_D"/*.conf
 
@@ -196,15 +199,42 @@ lan_interfaces() {
     printf '%s' "$found"
 }
 
+# The sockets existing is not proof the daemon answers: the mount can be stale,
+# Avahi can be built or configured without D-Bus, or the bus can refuse us.
+# shairport-sync treats a failed Avahi client as fatal, so check before choosing.
+avahi_on_the_bus() {
+    [ -S /run/dbus/system_bus_socket ] || return 1
+    dbus-send --system --dest=org.freedesktop.DBus --type=method_call --print-reply \
+        /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner \
+        string:org.freedesktop.Avahi 2>/dev/null | grep -q "boolean true"
+}
+
 resolve_avahi_mode() {
-    if [ "$AVAHI_MODE" != "auto" ]; then
+    case "$AVAHI_MODE" in
+        host)
+            if ! avahi_on_the_bus; then
+                log "WARNING: AVAHI_MODE=host but org.freedesktop.Avahi does not answer on"
+                log "  the system bus. Nothing will advertise. Check that avahi-daemon runs"
+                log "  on the host and that /var/run/dbus is mounted."
+            fi
+            return
+            ;;
+        container) return ;;
+    esac
+
+    if avahi_on_the_bus; then
+        AVAHI_MODE=host
         return
     fi
-    # Both sockets have to be mounted for the host's daemon to be usable.
-    if [ -S /run/avahi-daemon/socket ] && [ -S /run/dbus/system_bus_socket ]; then
-        AVAHI_MODE=host
-    else
-        AVAHI_MODE=container
+
+    AVAHI_MODE=container
+    if [ -S /run/avahi-daemon/socket ] || [ -S /run/dbus/system_bus_socket ]; then
+        # The host looked like it had Avahi but it is not usable over D-Bus.
+        # Run our own, under a name of its own so the two cannot collide.
+        : "${AVAHI_HOST_NAME:=$(short_hostname)-shareplay}"
+        log "NOTE: the host's D-Bus or Avahi socket is mounted but Avahi does not answer"
+        log "  on the bus, so a local avahi-daemon will run as \"${AVAHI_HOST_NAME}\""
+        log "  to avoid colliding with the host's .local name."
     fi
 }
 
@@ -322,11 +352,23 @@ stdout_logfile_maxbytes=0
 redirect_stderr=true
 stopasgroup=true
 killasgroup=true
-environment=DBUS_SESSION_BUS_ADDRESS="unix:path=/run/sendspin-shareplay/session_bus_socket",PATH="/opt/venv/bin:/usr/local/bin:/usr/bin:/bin",HOME="/root"
+environment=DBUS_SESSION_BUS_ADDRESS="unix:path=/run/sendspin-shareplay/session_bus_socket",${SYSTEM_BUS_ENV}PATH="/opt/venv/bin:/usr/local/bin:/usr/bin:/bin",HOME="/root"
 PROG
 }
 
 resolve_avahi_mode
+
+# program() bakes these into each supervisor entry, so they must be set before
+# the first call.
+if [ "$AVAHI_MODE" = "host" ]; then
+    SYSTEM_BUS_SOCKET=/run/dbus/system_bus_socket
+    SYSTEM_BUS_ENV=""
+else
+    SYSTEM_BUS_SOCKET="$PRIVATE_SYSTEM_BUS"
+    SYSTEM_BUS_ENV="DBUS_SYSTEM_BUS_ADDRESS=\"unix:path=${PRIVATE_SYSTEM_BUS}\","
+fi
+export SYSTEM_BUS_SOCKET
+
 write_asound_conf
 write_shairport_conf
 if [ "$ENABLE_BLUETOOTH" = "1" ]; then
@@ -340,9 +382,6 @@ if [ "$AVAHI_MODE" = "host" ]; then
     # host's daemon for the machine's .local name, renaming itself forever.
     log "mDNS: using the host's avahi-daemon"
 else
-    if [ -S /run/dbus/system_bus_socket ]; then
-        log "WARNING: a D-Bus system bus socket is already present; starting our own anyway"
-    fi
     log "mDNS: running avahi-daemon inside the container"
     log "  If the host also runs avahi-daemon, the two will fight over the same"
     log "  .local name. Mount /var/run/dbus and /var/run/avahi-daemon instead --"
@@ -350,8 +389,8 @@ else
     write_avahi_conf
     # Only safe to clear when these are our daemons; in host mode the pid files
     # belong to the host's dbus and avahi.
-    rm -f /run/dbus/pid /run/dbus/*.pid /run/avahi-daemon/pid
-    program dbus-system 10 /usr/bin/dbus-daemon --system --nofork --nopidfile
+    rm -f "$PRIVATE_SYSTEM_BUS" /run/avahi-daemon/pid
+    program dbus-system 10 /usr/bin/dbus-daemon --system --nofork --nopidfile --address="unix:path=${PRIVATE_SYSTEM_BUS}"
     program avahi 20 /usr/local/bin/run-avahi.sh
 fi
 
@@ -411,7 +450,7 @@ export AIRPLAY_NAME SENDSPIN_NAME AIRPLAY_MODE AUDIO_SHARING ALSA_PCM ALSA_RATE 
     SPOTIFY_INITIAL_VOLUME SPOTIFY_ZEROCONF_PORT EXTRA_SPOTIFYD_ARGS \
     ENABLE_DLNA DLNA_NAME DLNA_PORT DLNA_AUDIO_DEVICE DLNA_AUDIO_ONLY \
     DLNA_INTERFACE EXTRA_GMEDIARENDER_ARGS \
-    AVAHI_MODE AVAHI_HOST_NAME AVAHI_INTERFACES
+    AVAHI_MODE AVAHI_HOST_NAME AVAHI_INTERFACES SYSTEM_BUS_SOCKET
 
 log "shairport-sync ${SHAIRPORT_SYNC_VERSION:-?} / nqptp ${NQPTP_VERSION:-?} / sendspin ${SENDSPIN_VERSION:-?}"
 log "AirPlay name: ${AIRPLAY_NAME}   Sendspin name: ${SENDSPIN_NAME}"

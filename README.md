@@ -215,9 +215,16 @@ starting its own — services register against the host's Avahi and the name sta
 
 | Value | Behaviour |
 | --- | --- |
-| `auto` (default) | Use the host's daemon when both sockets are mounted, otherwise run one inside the container |
+| `auto` (default) | Use the host's daemon if it actually answers on the system bus, otherwise run one inside the container |
 | `host` | Always use the host's daemon; fails to advertise if the sockets are missing |
 | `container` | Always run our own — correct only when the host has no `avahi-daemon` |
+
+Detection asks the system bus whether `org.freedesktop.Avahi` has an owner, rather than
+just checking that the sockets exist — a mounted socket with nothing behind it is exactly
+the case that made Shairport Sync exit with `Could not establish mDNS advertisement!` in
+a restart loop. When the sockets are mounted but Avahi does not answer, the container
+falls back to running its own under a distinct `<hostname>-shareplay` name, so it still
+advertises without colliding with the host.
 
 **Docker bridge addresses.** In container mode Avahi would otherwise announce every
 interface it can see, including `docker0`, `br-*` and `veth*`. An AirPlay client that
@@ -369,6 +376,13 @@ docker exec sendspin-shareplay dbus-send --session --print-reply \
   org.freedesktop.DBus.ListNames | grep mpris
 ```
 
+**`couldn't create avahi client: Daemon not running!` and Shairport Sync restarting in a
+loop.** The host's D-Bus socket is mounted but Avahi is not answering on it. Check on the
+host with `systemctl is-active avahi-daemon` and
+`dbus-send --system --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner string:org.freedesktop.Avahi`.
+Since 0.5.1 the container detects this and runs its own daemon instead, so it should no
+longer be fatal — set `AVAHI_MODE=container` to force that behaviour.
+
 **Endless `Host name conflict, retrying with <host>-5`.** Two Avahi daemons are
 fighting: the host's and the container's. Mount `/var/run/dbus` and
 `/var/run/avahi-daemon` as the compose files do, and the container will use the host's
@@ -378,6 +392,14 @@ instead. See [mDNS](#mdns-and-the-hosts-avahi).
 the Pi already owns ports 319/320 (`sudo ss -lunp | grep -E '319|320'`) — a host `ptpd`
 or another Shairport Sync install will block nqptp. Also stop the host's `avahi-daemon`
 if it conflicts, or set `ENABLE_AIRPLAY=0` to isolate the problem.
+
+**`Failed to parse server message` / `'seek_relative' is not a valid MediaCommand`.**
+Music Assistant is speaking a newer Sendspin protocol than the pinned `sendspin` release
+understands: 7.5.0 requires `aiosendspin~=6.0.1`, while the library itself is much
+further ahead. Audio still plays and the handshake succeeds — the message that gets
+dropped is controller state, so volume changes made in Music Assistant may not reach the
+player. This needs an upstream `sendspin` release; the daily watcher will open a PR when
+one appears.
 
 **Sound card busy / no audio.** `AUDIO_SHARING=dmix` is the fix for two players wanting
 one card; if you set `exclusive`, expect exactly one to work at a time. Check `ALSA_PCM`
