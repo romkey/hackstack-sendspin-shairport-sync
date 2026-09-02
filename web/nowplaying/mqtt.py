@@ -95,7 +95,7 @@ class MqttSettings:
             from nowplaying.players import _local_ip
 
             address = _local_ip()
-            art_base = f"http://{address}:{env.get('WEB_PORT', '8080')}" if address else None
+            art_base = f"http://{address}:{env.get('WEB_PORT', '80')}" if address else None
         return cls(
             host=env["MQTT_HOST"],
             port=int(env.get("MQTT_PORT", "1883")),

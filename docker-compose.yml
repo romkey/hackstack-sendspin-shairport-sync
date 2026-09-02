@@ -42,7 +42,8 @@ services:
       AUDIO_SHARING: "dmix"
       ALSA_RATE: "44100"
 
-      WEB_PORT: "8080"
+      # The UI is on port 80. With host networking that must be free on the Pi.
+      WEB_PORT: "80"
       TZ: "America/Los_Angeles"
 
       # Optional: pin a Sendspin server instead of relying on mDNS discovery.

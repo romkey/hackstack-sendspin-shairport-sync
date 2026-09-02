@@ -1,6 +1,6 @@
 # hackstack-sendspin-shairport-sync
 
-**One container that turns a Raspberry Pi into both a [Sendspin](https://github.com/Sendspin/sendspin-cli) player and an [AirPlay 2](https://github.com/mikebrady/shairport-sync) speaker — with a single web page showing whatever is playing.**
+**One container that turns a Raspberry Pi into a speaker almost anything can play to — AirPlay 2, Sendspin, Bluetooth, Spotify Connect and DLNA — sharing one sound card, with a single web page and one Home Assistant device showing whatever is playing.**
 
 [![build](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/build.yml/badge.svg)](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/build.yml)
 [![lint](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/lint.yml/badge.svg)](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/lint.yml)
@@ -30,17 +30,66 @@ whenever upstream moves ahead of them.
 > The upstream software it packages — Shairport Sync, nqptp and Sendspin — is not
 > AI-generated. See [Credits](#credits).
 
+## TL;DR
+
+```bash
+git clone https://github.com/romkey/hackstack-sendspin-shairport-sync.git
+cd hackstack-sendspin-shairport-sync
+cp .env.example .env
+aplay -l                                        # find your card, e.g. hw:Headphones,0
+$EDITOR .env                                    # set AIRPLAY_NAME and ALSA_PCM
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Then open `http://<pi>/` — that is the whole thing for AirPlay and Sendspin.
+
+**On by default:** AirPlay 2, Sendspin, the web UI. Turn any of them off with
+`ENABLE_AIRPLAY=0`, `ENABLE_SENDSPIN=0`, `ENABLE_WEB=0`.
+
+**Off by default.** Each is one variable in `.env`, plus whatever is in the last column:
+
+| To add | Set in `.env` | Also required |
+| --- | --- | --- |
+| **Bluetooth** | `ENABLE_BLUETOOTH=1` | uncomment `NET_ADMIN` and `/dev/rfkill` in the compose file, **and** `sudo systemctl disable --now bluetooth` on the Pi — the container needs the adapter to itself |
+| **Spotify Connect** | `ENABLE_SPOTIFY=1` | a Spotify Premium account; nothing to configure, you claim the speaker from the app |
+| **DLNA / UPnP** | `ENABLE_DLNA=1` | nothing — best option for Android |
+| **Home Assistant** | `ENABLE_MQTT=1`, `MQTT_HOST=…` | an MQTT broker; entities appear by themselves |
+
+**Already set in the compose file, and needed:** host networking, `SYS_NICE`, `/dev/snd`,
+and the two Avahi socket mounts. Don't remove them unless you know why.
+
+**Two things that commonly need attention:**
+
+- The web UI listens on **port 80**. With host networking that port must be free on the
+  Pi; set `WEB_PORT` if something else has it.
+- `ALSA_PCM` must match your actual card. Everything plays through one shared device, so
+  if that value is wrong, nothing makes sound.
+
 ## What you get
 
-- **AirPlay 2** via Shairport Sync + nqptp — play to the Pi from iPhone, iPad, Mac, or HomePod groups.
-- **Sendspin** via the official `sendspin` daemon — the open multi-room protocol used by Music Assistant and Home Assistant.
-- **Bluetooth A2DP** (optional, off by default) — pair a phone and play to the Pi directly.
-- **Spotify Connect** (optional, off by default) — the Pi appears in the Spotify app's device picker.
-- **DLNA/UPnP renderer** (optional, off by default) — a "play to" target for Android apps, BubbleUPnP, Plex and most NAS media servers.
-- **Home Assistant integration** (optional, off by default) — MQTT with auto-discovery: what's playing, from which source, cover art, volume control, transport buttons, a restart button, and CPU/memory/temperature diagnostics.
-- **One web UI** at `http://<pi>:8080` that shows cover art, title, artist, album and progress for *whichever* source is playing.
-- Both players **sharing the same sound card** through ALSA `dmix`, so you don't have to pick one.
-- Multi-arch images (`linux/amd64`, `linux/arm64`) published to GitHub Container Registry on every push, tag, and upstream release.
+**Five ways to play to it**, all sharing one sound card:
+
+| Source | Default | Play to it from |
+| --- | --- | --- |
+| **AirPlay 2** — Shairport Sync + nqptp | on | iPhone, iPad, Mac, HomePod groups |
+| **Sendspin** — the official daemon | on | Music Assistant, Home Assistant |
+| **Bluetooth A2DP** — BlueZ + BlueALSA | off | any phone, laptop or tablet, once paired |
+| **Spotify Connect** — spotifyd | off | the Spotify app's device picker |
+| **DLNA/UPnP** — gmediarender | off | Android apps, BubbleUPnP, Plex, Jellyfin, most NAS servers |
+
+They coexist rather than compete: ALSA `dmix` puts them all on the same output, so you
+never have to choose one, and if two play at once you hear both.
+
+**Two ways to see what's playing**, whichever source it came from:
+
+- **A web page** at `http://<pi>/` — cover art, title, artist, album and progress, updated
+  live over server-sent events.
+- **Home Assistant** (optional) — MQTT auto-discovery registers one device with 20
+  entities: track and source sensors, cover art, a volume control, transport and restart
+  buttons, and CPU/memory/temperature diagnostics.
+
+Multi-arch images (`linux/amd64`, `linux/arm64`) are published to GitHub Container
+Registry on every push, tag and upstream release.
 
 ## How the unified UI works
 
@@ -57,7 +106,7 @@ and the web UI is simply an MPRIS observer:
   Assistant ────► │                  │                        │        │
                   │  spotifyd ───────┘                        │        │
   Spotify app ──► │        │                                  ▼        │
-                  │        │                      nowplaying web UI ───┼──► :8080
+                  │        │                      nowplaying web UI ───┼──► :80  
   Phone ────────► │  bluetoothd + bluealsa ─► system bus ──►   ▲       │
   (Bluetooth)     │        │                       (AVRCP)     │       │
                   │        │                                   │       │
@@ -91,11 +140,11 @@ Find your output device:
 aplay -l
 ```
 
-The 3.5&nbsp;mm headphone jack is usually `hw:Headphones,0`; a HAT DAC is typically
-`hw:sndrpihifiberry,0` or similar.
+The 3.5&nbsp;mm jack is usually `hw:Headphones,0`, a HAT DAC typically
+`hw:sndrpihifiberry,0`. Whatever it is goes in `ALSA_PCM` — everything plays through it.
 
 Then pull the repo (or just [`docker-compose.prod.yml`](docker-compose.prod.yml) and
-[`.env.example`](.env.example)), set `ALSA_PCM` and the names, and start it:
+[`.env.example`](.env.example)), set `ALSA_PCM` and `AIRPLAY_NAME`, and start it:
 
 ```bash
 git clone https://github.com/romkey/hackstack-sendspin-shairport-sync.git
@@ -105,7 +154,7 @@ $EDITOR .env
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-That runs the published image from GHCR. Open `http://<pi-address>:8080`, and the
+That runs the published image from GHCR. Open `http://<pi-address>/`, and the
 speaker appears in AirPlay pickers and in Music Assistant.
 
 To update later:
@@ -185,7 +234,7 @@ and so follows the hostname instead.
 | `MQTT_DISCOVERY_PREFIX` | `homeassistant` | Must match HA's discovery prefix |
 | `MQTT_ART_BASE_URL` | `http://<lan-ip>:<WEB_PORT>` | Base URL HA fetches cover art from |
 | `MQTT_DIAGNOSTICS_INTERVAL` | `30` | Seconds between diagnostic publishes |
-| `WEB_PORT` | `8080` | Web UI port |
+| `WEB_PORT` | `80` | Web UI port. Must be free on the host, since networking is shared |
 | `LOG_LEVEL` | `info` | `debug` for much noisier logs |
 | `EXTRA_SHAIRPORT_ARGS` | *unset* | Appended to the `shairport-sync` command line |
 | `EXTRA_SENDSPIN_ARGS` | *unset* | Appended to the `sendspin daemon` command line |
@@ -459,7 +508,7 @@ useful number.
 Two things work with no configuration at all:
 
 - `/api/state` is plain JSON, so an HA [RESTful sensor](https://www.home-assistant.io/integrations/sensor.rest/)
-  pointed at `http://<pi>:8080/api/state` gives you a `now playing` entity by polling.
+  pointed at `http://<pi>/api/state` gives you a `now playing` entity by polling.
 - With `ENABLE_DLNA=1`, HA's core [DLNA DMR](https://www.home-assistant.io/integrations/dlna_dmr/)
   integration can add the renderer as a real `media_player` entity. That only reflects
   DLNA playback, not the other four sources.
@@ -602,7 +651,7 @@ To work on the web UI without any audio hardware, run the container with the pla
 off and publish a fake MPRIS player onto its bus:
 
 ```bash
-docker run -d --name np -p 8080:8080 \
+docker run -d --name np -p 8080:80 \
   -e ENABLE_AIRPLAY=0 -e ENABLE_SENDSPIN=0 -e AUDIO_SHARING=none \
   -v "$PWD/scripts:/scripts:ro" sendspin-shareplay:dev
 

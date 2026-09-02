@@ -235,13 +235,13 @@ ENV ENABLE_AIRPLAY=1 \
     ALSA_RATE=44100 \
     SHAIRPORT_OUTPUT_DEVICE=default \
     SENDSPIN_AUDIO_DEVICE=default \
-    WEB_PORT=8080
+    WEB_PORT=80
 
 RUN mkdir -p /run/dbus /run/bluetooth /run/sendspin-shareplay /config /var/lib/shairport-sync/coverart \
     && chmod +x /usr/local/bin/*.sh
 
 VOLUME ["/config"]
-EXPOSE 8080/tcp
+EXPOSE 80/tcp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["/usr/local/bin/healthcheck.sh"]

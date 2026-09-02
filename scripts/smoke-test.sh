@@ -71,8 +71,7 @@ docker run -d --name "$NAME" \
     -e ENABLE_SENDSPIN=0 \
     -e AUDIO_SHARING=none \
     -e AVAHI_MODE=container \
-    -e WEB_PORT=8080 \
-    -p "${PORT}:8080" \
+    -p "${PORT}:80" \
     "$IMAGE" >/dev/null
 
 echo "--- waiting for the web UI"

@@ -13,7 +13,7 @@ def main() -> None:
     """Parse arguments and start the server."""
     parser = argparse.ArgumentParser(prog="nowplaying", description=__doc__)
     parser.add_argument("--host", default="0.0.0.0")  # noqa: S104 -- container-facing by design
-    parser.add_argument("--port", type=int, default=int(os.environ.get("WEB_PORT", "8080")))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("WEB_PORT", "80")))
     parser.add_argument("--poll-interval", type=float, default=1.0)
     parser.add_argument(
         "--dlna-port",

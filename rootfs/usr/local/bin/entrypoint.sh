@@ -17,7 +17,7 @@ short_hostname() { hostname -s 2>/dev/null || hostname; }
 : "${SHAIRPORT_OUTPUT_DEVICE:=default}"
 : "${SENDSPIN_AUDIO_DEVICE:=default}"
 : "${SENDSPIN_HARDWARE_VOLUME:=false}"
-: "${WEB_PORT:=8080}"
+: "${WEB_PORT:=80}"
 : "${ENABLE_AIRPLAY:=1}"
 : "${ENABLE_SENDSPIN:=1}"
 : "${ENABLE_WEB:=1}"
