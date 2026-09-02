@@ -19,6 +19,7 @@ import asyncio
 import contextlib
 import logging
 import os
+from pathlib import Path
 
 from dbus_fast import BusType, Message, MessageType, Variant
 from dbus_fast.aio import MessageBus
@@ -146,6 +147,29 @@ async def _trust_paired_devices(bus: MessageBus) -> None:
                 await _set_prop(bus, path, IFACE_DEVICE, "Trusted", Variant("b", True))
 
 
+def _explain(adapter: str) -> str:
+    """Best guess at why the adapter refuses to be configured."""
+    if not Path("/dev/rfkill").exists():
+        return (
+            "/dev/rfkill is not mapped into the container, so a soft block cannot be "
+            "cleared. Add '- /dev/rfkill:/dev/rfkill' to the compose devices list, or "
+            "run 'sudo rfkill unblock bluetooth' on the host."
+        )
+    blocked = Path("/sys/class/rfkill")
+    with contextlib.suppress(OSError):
+        for entry in blocked.glob("rfkill*"):
+            if (entry / "type").read_text().strip() != "bluetooth":
+                continue
+            if (entry / "soft").read_text().strip() != "0":
+                return "the adapter is rfkill soft blocked; try 'rfkill unblock bluetooth'"
+            if (entry / "hard").read_text().strip() != "0":
+                return "the adapter is rfkill HARD blocked, usually a physical switch"
+    return (
+        f"check the host: 'hciconfig {adapter} up' and whether the host's own "
+        "bluetooth service is still holding the adapter"
+    )
+
+
 async def main() -> None:
     """Register the agent and keep the adapter in a connectable state."""
     parser = argparse.ArgumentParser(description="BlueZ pairing agent for a headless speaker")
@@ -183,6 +207,7 @@ async def main() -> None:
 
     # BlueZ clears Discoverable on its own timers and after some errors, so
     # re-assert the whole adapter state on a loop rather than only at startup.
+    complained = False
     while True:
         try:
             await _set_prop(bus, adapter_path, IFACE_ADAPTER, "Powered", Variant("b", True))
@@ -197,8 +222,18 @@ async def main() -> None:
                 Variant("b", bool(args.discoverable)),
             )
             await _trust_paired_devices(bus)
+            if complained:
+                _LOGGER.info("adapter %s is configured and discoverable again", args.adapter)
+                complained = False
         except Exception as exc:  # noqa: BLE001 -- keep the agent alive regardless
-            _LOGGER.warning("could not refresh adapter state: %s", exc)
+            # Retrying every interval would otherwise fill the log with the same
+            # unexplained line, so say what it means once.
+            if complained:
+                _LOGGER.debug("adapter %s still not configurable: %s", args.adapter, exc)
+            else:
+                complained = True
+                _LOGGER.warning("could not configure adapter %s: %s", args.adapter, exc)
+                _LOGGER.warning("  %s", _explain(args.adapter))
 
         await asyncio.sleep(args.interval)
 

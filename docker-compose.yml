@@ -24,6 +24,9 @@ services:
 
     devices:
       - "/dev/snd:/dev/snd"
+      # Required only for ENABLE_BLUETOOTH=1, so the container can clear an
+      # rfkill soft block. Without it the adapter cannot be powered on.
+      #- "/dev/rfkill:/dev/rfkill"
 
     environment:
       # Sendspin, Bluetooth, Spotify, DLNA and the Home Assistant device all

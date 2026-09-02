@@ -334,6 +334,21 @@ write_bluetooth_conf() {
         ln -s /config/bluetooth /var/lib/bluetooth
     fi
 
+    # A soft-blocked adapter accepts nothing: bluetoothd logs "Failed to set
+    # mode" and BlueALSA reports the HCI device as down. Clearing it needs
+    # /dev/rfkill mapped into the container.
+    if [ -c /dev/rfkill ]; then
+        if rfkill list bluetooth 2>/dev/null | grep -q "yes"; then
+            log "Bluetooth is rfkill blocked; unblocking"
+            rfkill unblock bluetooth || log "WARNING: rfkill unblock failed"
+        fi
+    else
+        log "NOTE: /dev/rfkill is not available to the container. If Bluetooth"
+        log "  stays down (\"Failed to set mode\"), add it to the compose file:"
+        log "    devices: - /dev/rfkill:/dev/rfkill"
+        log "  or clear the block on the host with: sudo rfkill unblock bluetooth"
+    fi
+
     if [ -f /config/bluetooth.conf ]; then
         log "using /config/bluetooth.conf"
         cp /config/bluetooth.conf /etc/bluetooth/main.conf

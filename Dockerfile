@@ -195,6 +195,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libuuid1 \
         procps \
         python3 \
+        rfkill \
         supervisor \
         tzdata \
     && rm -rf /etc/avahi/services/*.service

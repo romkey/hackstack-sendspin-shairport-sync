@@ -313,7 +313,10 @@ and showing up in the same web UI via AVRCP metadata.
 
 It needs three things beyond `ENABLE_BLUETOOTH=1`:
 
-1. **`NET_ADMIN`** on the container — uncomment it under `cap_add` in the compose file.
+1. **`NET_ADMIN`** on the container, and **`/dev/rfkill`** — both are commented out in
+   the compose file, under `cap_add` and `devices`. `NET_ADMIN` lets `bluetoothd` open
+   the management socket; `/dev/rfkill` lets the container clear a soft block, without
+   which the adapter cannot be powered on at all.
 2. **Host networking**, which you already have. Bluetooth adapters belong to a network
    namespace, so the container sees `hci0` only because it shares the host's.
 3. **The host's Bluetooth stack stopped.** Only one `bluetoothd` can own an adapter,
@@ -511,8 +514,24 @@ matches `aplay -l`.
 **Bluetooth won't start.** `bluetoothd` logging `Failed to access management
 interface` means it cannot reach the adapter: check `NET_ADMIN` is granted, that the
 host's own `bluetooth` service is stopped, and that `hciconfig -a` on the host shows
-the adapter. Nothing pairs? Watch `docker logs` for the `bt-agent` lines — it logs
-every authorisation it accepts.
+the adapter.
+
+**`Failed to set mode: Failed (0x03)`, with BlueALSA reporting `Network is down`.**
+The adapter is present but cannot be powered on, which is almost always an rfkill soft
+block. Map `/dev/rfkill` into the container — the entrypoint then clears the block
+itself at startup — or clear it on the host:
+
+```bash
+rfkill list                      # look for "Soft blocked: yes"
+sudo rfkill unblock bluetooth
+```
+
+The agent prints its best guess at the cause the first time it fails, and stops
+repeating it until something changes. If rfkill is clear and it still fails, check
+whether the host's own `bluetooth` service is still running and holding the adapter.
+
+Nothing pairs? Watch `docker logs` for the `bt-agent` lines — it logs every
+authorisation it accepts.
 
 **Spotify doesn't appear in the app.** Connect discovery needs the phone on the same
 subnet as the Pi, host networking (which you have), and a Premium account. Check
