@@ -34,6 +34,7 @@ short_hostname() { hostname -s 2>/dev/null || hostname; }
 : "${DLNA_AUDIO_ONLY:=1}"
 : "${EXTRA_SPOTIFYD_ARGS:=}"
 : "${EXTRA_GMEDIARENDER_ARGS:=}"
+: "${ENABLE_MQTT:=0}"
 : "${LOG_LEVEL:=info}"
 : "${AVAHI_MODE:=auto}"
 : "${AVAHI_HOST_NAME:=}"
@@ -391,7 +392,10 @@ resolve_avahi_mode
 # program() bakes these into each supervisor entry, so they must be set before
 # the first call.
 if [ "$AVAHI_MODE" = "host" ]; then
-    SYSTEM_BUS_SOCKET=/run/dbus/system_bus_socket
+    SYSTEM_BUS_SOCKET \
+    ENABLE_MQTT MQTT_HOST MQTT_PORT MQTT_USERNAME MQTT_PASSWORD MQTT_TLS \
+    MQTT_DEVICE_NAME MQTT_DEVICE_ID MQTT_BASE_TOPIC MQTT_DISCOVERY_PREFIX \
+    MQTT_ART_BASE_URL MQTT_DIAGNOSTICS_INTERVAL=/run/dbus/system_bus_socket
     SYSTEM_BUS_ENV=""
 else
     SYSTEM_BUS_SOCKET="$PRIVATE_SYSTEM_BUS"
@@ -458,6 +462,14 @@ fi
 if [ "$ENABLE_DLNA" = "1" ]; then
     log "DLNA/UPnP renderer enabled as \"${DLNA_NAME}\" on port ${DLNA_PORT}"
     program gmediarender 30 /usr/local/bin/run-gmediarender.sh
+fi
+
+if [ "$ENABLE_MQTT" = "1" ]; then
+    if [ -z "${MQTT_HOST:-}" ]; then
+        log "WARNING: ENABLE_MQTT=1 but MQTT_HOST is unset; MQTT stays off"
+    else
+        log "MQTT enabled: publishing to ${MQTT_HOST}:${MQTT_PORT:-1883}"
+    fi
 fi
 
 if [ "$ENABLE_WEB" = "1" ]; then

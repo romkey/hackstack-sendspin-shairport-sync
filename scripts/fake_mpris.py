@@ -17,7 +17,7 @@ import asyncio
 from dbus_fast import BusType, Variant
 from dbus_fast.aio import MessageBus
 from dbus_fast.constants import PropertyAccess
-from dbus_fast.service import ServiceInterface, dbus_property
+from dbus_fast.service import ServiceInterface, dbus_property, method
 
 MPRIS_PATH = "/org/mpris/MediaPlayer2"
 
@@ -59,6 +59,8 @@ class Player(ServiceInterface):
         if art_url:
             self._metadata["mpris:artUrl"] = ("s", art_url)
         self.position = 0
+        self.volume = 0.75
+        self.volume = 0.75
 
     @dbus_property(access=PropertyAccess.READ)
     def PlaybackStatus(self) -> "s":
@@ -75,10 +77,46 @@ class Player(ServiceInterface):
         """Playback position in microseconds."""
         return self.position
 
-    @dbus_property(access=PropertyAccess.READ)
+    @dbus_property(access=PropertyAccess.READWRITE)
     def Volume(self) -> "d":
         """Playback volume, 0.0-1.0."""
-        return 0.75
+        return self.volume
+
+    @Volume.setter
+    def Volume(self, value: "d") -> None:  # noqa: N802
+        """Accept a volume change, as a real player would."""
+        self.volume = max(0.0, min(1.0, value))
+        print(f"volume set to {self.volume:.2f}", flush=True)
+
+    @method()
+    def Play(self):  # noqa: N802
+        """Start playback."""
+        print("command: Play", flush=True)
+
+    @method()
+    def Pause(self):  # noqa: N802
+        """Pause playback."""
+        print("command: Pause", flush=True)
+
+    @method()
+    def PlayPause(self):  # noqa: N802
+        """Toggle playback."""
+        print("command: PlayPause", flush=True)
+
+    @method()
+    def Stop(self):  # noqa: N802
+        """Stop playback."""
+        print("command: Stop", flush=True)
+
+    @method()
+    def Next(self):  # noqa: N802
+        """Skip forward."""
+        print("command: Next", flush=True)
+
+    @method()
+    def Previous(self):  # noqa: N802
+        """Skip back."""
+        print("command: Previous", flush=True)
 
 
 async def main() -> None:

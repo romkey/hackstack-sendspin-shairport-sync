@@ -44,7 +44,7 @@ class Agent(ServiceInterface):
         super().__init__(IFACE_AGENT)
 
     @method()
-    def Release(self) -> None:  # noqa: N802 -- D-Bus method name
+    def Release(self):  # noqa: N802 -- D-Bus method name
         """BlueZ is done with this agent."""
         _LOGGER.info("agent released by BlueZ")
 
@@ -61,32 +61,32 @@ class Agent(ServiceInterface):
         return 0
 
     @method()
-    def DisplayPinCode(self, device: "o", pincode: "s") -> None:  # noqa: N802, F821
+    def DisplayPinCode(self, device: "o", pincode: "s"):  # noqa: N802, F821
         """Nothing to display on, so just log it."""
         _LOGGER.info("pin code for %s: %s", device, pincode)
 
     @method()
-    def DisplayPasskey(self, device: "o", passkey: "u", entered: "q") -> None:  # noqa: N802, F821
+    def DisplayPasskey(self, device: "o", passkey: "u", entered: "q"):  # noqa: N802, F821
         """Nothing to display on, so just log it."""
         _LOGGER.info("passkey for %s: %06d", device, passkey)
 
     @method()
-    def RequestConfirmation(self, device: "o", passkey: "u") -> None:  # noqa: N802, F821
+    def RequestConfirmation(self, device: "o", passkey: "u"):  # noqa: N802, F821
         """Accept the numeric comparison; returning without error means yes."""
         _LOGGER.info("confirming pairing with %s (passkey %06d)", device, passkey)
 
     @method()
-    def RequestAuthorization(self, device: "o") -> None:  # noqa: N802, F821
+    def RequestAuthorization(self, device: "o"):  # noqa: N802, F821
         """Accept a just-works pairing."""
         _LOGGER.info("authorising pairing with %s", device)
 
     @method()
-    def AuthorizeService(self, device: "o", uuid: "s") -> None:  # noqa: N802, F821
+    def AuthorizeService(self, device: "o", uuid: "s"):  # noqa: N802, F821
         """Accept a service connection, e.g. A2DP."""
         _LOGGER.info("authorising service %s for %s", uuid, device)
 
     @method()
-    def Cancel(self) -> None:  # noqa: N802
+    def Cancel(self):  # noqa: N802
         """A pairing attempt was abandoned."""
         _LOGGER.info("pairing cancelled")
 

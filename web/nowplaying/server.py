@@ -14,6 +14,7 @@ from urllib.parse import unquote, urlparse
 from aiohttp import web
 
 from nowplaying import __version__
+from nowplaying.mqtt import MqttBridge, MqttSettings
 from nowplaying.players import PlayerWatcher
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ ART_ROOTS = tuple(
 )
 
 WATCHER_KEY = web.AppKey("watcher", PlayerWatcher)
+BRIDGE_KEY = web.AppKey("mqtt", object)
 
 
 async def handle_index(request: web.Request) -> web.FileResponse:
@@ -106,11 +108,17 @@ async def handle_art(request: web.Request) -> web.StreamResponse:
     )
 
 
-async def _start_watcher(app: web.Application) -> None:
+async def _start_services(app: web.Application) -> None:
     await app[WATCHER_KEY].start()
+    bridge = app.get(BRIDGE_KEY)
+    if bridge is not None:
+        await bridge.start()
 
 
-async def _stop_watcher(app: web.Application) -> None:
+async def _stop_services(app: web.Application) -> None:
+    bridge = app.get(BRIDGE_KEY)
+    if bridge is not None:
+        await bridge.stop()
     await app[WATCHER_KEY].stop()
 
 
@@ -132,8 +140,13 @@ def create_app(
     app.router.add_get("/api/art", handle_art)
     app.router.add_static("/static", STATIC_DIR, name="static")
 
-    app.on_startup.append(_start_watcher)
-    app.on_cleanup.append(_stop_watcher)
+    settings = MqttSettings.from_env()
+    if settings is not None:
+        _LOGGER.info("MQTT enabled: %s:%s as %r", settings.host, settings.port, settings.device_id)
+        app[BRIDGE_KEY] = MqttBridge(settings, app[WATCHER_KEY])
+
+    app.on_startup.append(_start_services)
+    app.on_cleanup.append(_stop_services)
     return app
 
 

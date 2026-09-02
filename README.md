@@ -4,6 +4,7 @@
 
 [![build](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/build.yml/badge.svg)](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/build.yml)
 [![lint](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/lint.yml/badge.svg)](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/lint.yml)
+[![test](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/test.yml/badge.svg)](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/test.yml)
 [![upstream-watch](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/upstream-watch.yml/badge.svg)](https://github.com/romkey/hackstack-sendspin-shairport-sync/actions/workflows/upstream-watch.yml)
 [![ghcr.io](https://img.shields.io/badge/ghcr.io-hackstack--sendspin--shairport--sync-2496ed?logo=docker&logoColor=white)](https://github.com/romkey/hackstack-sendspin-shairport-sync/pkgs/container/hackstack-sendspin-shairport-sync)
 [![license](https://img.shields.io/github/license/romkey/hackstack-sendspin-shairport-sync)](LICENSE)
@@ -36,6 +37,7 @@ whenever upstream moves ahead of them.
 - **Bluetooth A2DP** (optional, off by default) — pair a phone and play to the Pi directly.
 - **Spotify Connect** (optional, off by default) — the Pi appears in the Spotify app's device picker.
 - **DLNA/UPnP renderer** (optional, off by default) — a "play to" target for Android apps, BubbleUPnP, Plex and most NAS media servers.
+- **Home Assistant integration** (optional, off by default) — MQTT with auto-discovery: what's playing, from which source, cover art, volume control, transport buttons, a restart button, and CPU/memory/temperature diagnostics.
 - **One web UI** at `http://<pi>:8080` that shows cover art, title, artist, album and progress for *whichever* source is playing.
 - Both players **sharing the same sound card** through ALSA `dmix`, so you don't have to pick one.
 - Multi-arch images (`linux/amd64`, `linux/arm64`) published to GitHub Container Registry on every push, tag, and upstream release.
@@ -165,6 +167,17 @@ file-level overrides.
 | `AVAHI_INTERFACES` | real interfaces | Comma-separated interfaces Avahi may announce on |
 | `AVAHI_HOST_NAME` | system hostname | Override the `.local` name in container mode |
 | `AVAHI_PUBLISH_ADDRESSES` | `auto` | `no` when another mDNS responder is detected, else `yes` |
+| `ENABLE_MQTT` | `0` | Set `1` to publish to MQTT and appear in Home Assistant |
+| `MQTT_HOST` | *unset* | Broker hostname — required when MQTT is enabled |
+| `MQTT_PORT` | `1883` | Broker port |
+| `MQTT_USERNAME` / `MQTT_PASSWORD` | *unset* | Broker credentials |
+| `MQTT_TLS` | `0` | Set `1` to connect over TLS |
+| `MQTT_DEVICE_NAME` | `AIRPLAY_NAME` | Device name in Home Assistant |
+| `MQTT_DEVICE_ID` | slug of the name | Entity id prefix and topic segment |
+| `MQTT_BASE_TOPIC` | `sendspin-shareplay/<id>` | Root topic |
+| `MQTT_DISCOVERY_PREFIX` | `homeassistant` | Must match HA's discovery prefix |
+| `MQTT_ART_BASE_URL` | `http://<lan-ip>:<WEB_PORT>` | Base URL HA fetches cover art from |
+| `MQTT_DIAGNOSTICS_INTERVAL` | `30` | Seconds between diagnostic publishes |
 | `WEB_PORT` | `8080` | Web UI port |
 | `LOG_LEVEL` | `info` | `debug` for much noisier logs |
 | `EXTRA_SHAIRPORT_ARGS` | *unset* | Appended to the `shairport-sync` command line |
@@ -352,6 +365,57 @@ the track metadata, so the UI shows real artwork rather than the placeholder.
 Unlike Bluetooth and Spotify, this one *was* tested end to end: a simulated controller
 pushes a track and the UI renders it.
 
+## Home Assistant (optional)
+
+Off by default. Set `ENABLE_MQTT=1` and `MQTT_HOST`, and the speaker appears in Home
+Assistant automatically through MQTT discovery — no YAML, no custom integration.
+
+```bash
+ENABLE_MQTT=1
+MQTT_HOST=192.168.1.10
+MQTT_USERNAME=homeassistant
+MQTT_PASSWORD=secret
+```
+
+Home Assistant has no MQTT `media_player` platform, so the state is mapped onto the
+platforms it does have. One device, with these entities:
+
+| Entity | Kind | What it does |
+| --- | --- | --- |
+| Now playing | sensor | Track title, with everything else as attributes |
+| Artist / Album / Source / Active player | sensor | Broken out for dashboards and automations |
+| Playing | binary sensor | `on` whenever any source is playing |
+| Cover art | image | Artwork, proxied through this container's web server |
+| Volume | number | 0–100, applied to whichever source is active |
+| Play/pause, Next, Previous, Stop | button | Transport control of the active source |
+| Restart | button | Stops supervisord so Docker restarts the container |
+| CPU, Memory, Memory used, Disk, Temperature, Load average, Uptime | sensor | Diagnostics |
+
+**Controls apply to whatever is playing.** Volume goes over MPRIS for AirPlay, Sendspin
+and Spotify, and over UPnP `RenderingControl` for DLNA. Bluetooth is the exception:
+BlueZ carries volume on the transport rather than the player, and only when the phone
+negotiated absolute volume, so volume is not offered for that source.
+
+**State is retained**, so Home Assistant has the right values immediately after a
+restart on either side, and a last-will message marks the device unavailable if the
+container stops. Diagnostics are published every `MQTT_DIAGNOSTICS_INTERVAL` seconds
+(30 by default); track state is published the moment it changes.
+
+**Temperature** comes from the SoC thermal zone, which is worth having on a Pi in a
+warm cupboard. **Memory** reports the container's cgroup usage when a memory limit is
+set, and the host's memory when it isn't — an unlimited container's own usage is not a
+useful number.
+
+### Without MQTT
+
+Two things work with no configuration at all:
+
+- `/api/state` is plain JSON, so an HA [RESTful sensor](https://www.home-assistant.io/integrations/sensor.rest/)
+  pointed at `http://<pi>:8080/api/state` gives you a `now playing` entity by polling.
+- With `ENABLE_DLNA=1`, HA's core [DLNA DMR](https://www.home-assistant.io/integrations/dlna_dmr/)
+  integration can add the renderer as a real `media_player` entity. That only reflects
+  DLNA playback, not the other four sources.
+
 ## Web UI
 
 - `/` — the now-playing page (server-sent events; no polling from the browser)
@@ -500,6 +564,7 @@ docker build \
 | [`build.yml`](.github/workflows/build.yml) | push to `main`, tags, PRs, weekly cron, `repository_dispatch` | Builds `linux/amd64` and `linux/arm64` in parallel on native runners, merges them into one multi-platform tag on GHCR with build provenance, then smoke-tests it |
 | [`upstream-watch.yml`](.github/workflows/upstream-watch.yml) | daily cron | Checks shairport-sync, nqptp and sendspin releases; opens a PR bumping `versions.env` when one moves |
 | [`lint.yml`](.github/workflows/lint.yml) | push, PR | hadolint, shellcheck, ruff |
+| [`test.yml`](.github/workflows/test.yml) | push, PR | pytest against the web UI, MQTT bridge and diagnostics |
 
 **Why the build is split by architecture.** This image compiles shairport-sync, nqptp
 and spotifyd from source. Building arm64 under QEMU on an x86 runner made a cold build

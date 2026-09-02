@@ -1,0 +1,16 @@
+pyproject.toml
+nowplaying/__init__.py
+nowplaying/__main__.py
+nowplaying/diagnostics.py
+nowplaying/mqtt.py
+nowplaying/players.py
+nowplaying/server.py
+nowplaying.egg-info/PKG-INFO
+nowplaying.egg-info/SOURCES.txt
+nowplaying.egg-info/dependency_links.txt
+nowplaying.egg-info/requires.txt
+nowplaying.egg-info/top_level.txt
+nowplaying/static/app.js
+nowplaying/static/index.html
+nowplaying/static/style.css
+tests/test_diagnostics.py

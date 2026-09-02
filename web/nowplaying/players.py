@@ -43,6 +43,7 @@ IFACE_BLUEZ_PLAYER = "org.bluez.MediaPlayer1"
 IFACE_BLUEZ_DEVICE = "org.bluez.Device1"
 
 AVTRANSPORT = "urn:schemas-upnp-org:service:AVTransport:1"
+RENDERINGCONTROL = "urn:schemas-upnp-org:service:RenderingControl:1"
 DIDL_NS = {
     "didl": "urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/",
     "dc": "http://purl.org/dc/elements/1.1/",
@@ -199,6 +200,7 @@ class PlayerWatcher:
         self._dlna_port = dlna_port
         self._dlna_url = dlna_url.rstrip("/") if dlna_url else None
         self._dlna_control: str | None = None
+        self._dlna_rendering: str | None = None
         self._dlna_name = "DLNA"
         self._http: aiohttp.ClientSession | None = None
         self._dlna_warned = False
@@ -275,6 +277,7 @@ class PlayerWatcher:
                 _LOGGER.debug("DLNA poll failed: %s", exc)
                 # Force rediscovery in case the renderer restarted on a new port.
                 self._dlna_control = None
+                self._dlna_rendering = None
 
             state = State(players=players, active=self._pick_active(players))
             self._state = state
@@ -524,6 +527,7 @@ class PlayerWatcher:
             root = ET.fromstring(await response.text())
 
         control: str | None = None
+        rendering: str | None = None
         for element in root.iter():
             tag = element.tag.rsplit("}", 1)[-1]
             if tag == "friendlyName" and element.text:
@@ -533,26 +537,47 @@ class PlayerWatcher:
             fields = {child.tag.rsplit("}", 1)[-1]: (child.text or "") for child in element}
             if fields.get("serviceType") == AVTRANSPORT:
                 control = fields.get("controlURL")
+            elif fields.get("serviceType") == RENDERINGCONTROL:
+                rendering = fields.get("controlURL")
 
         if not control:
             raise RuntimeError(f"no AVTransport service in {description}")
 
+        # RenderingControl is optional in principle; volume is skipped without it.
+        self._dlna_rendering = urljoin(base + "/", rendering) if rendering else None
         self._dlna_control = urljoin(base + "/", control)
         _LOGGER.info("found UPnP renderer %r at %s", self._dlna_name, self._dlna_control)
         return self._dlna_control
 
-    async def _soap(self, session: aiohttp.ClientSession, url: str, action: str) -> dict[str, str]:
-        """Call one no-argument AVTransport action and flatten the response."""
+    async def _soap_rendering(
+        self, session: aiohttp.ClientSession, action: str, extra: str
+    ) -> dict[str, str]:
+        """Call a RenderingControl action, discovered alongside AVTransport."""
+        if self._dlna_rendering is None:
+            raise RuntimeError("this renderer exposes no RenderingControl service")
+        return await self._soap(
+            session, self._dlna_rendering, action, extra, service=RENDERINGCONTROL
+        )
+
+    async def _soap(
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        action: str,
+        extra: str = "",
+        service: str = AVTRANSPORT,
+    ) -> dict[str, str]:
+        """Call one AVTransport action and flatten the response."""
         body = (
             '<?xml version="1.0"?>'
             '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
             's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>'
-            f'<u:{action} xmlns:u="{AVTRANSPORT}"><InstanceID>0</InstanceID></u:{action}>'
+            f'<u:{action} xmlns:u="{service}"><InstanceID>0</InstanceID>{extra}</u:{action}>'
             "</s:Body></s:Envelope>"
         )
         headers = {
             "Content-Type": 'text/xml; charset="utf-8"',
-            "SOAPACTION": f'"{AVTRANSPORT}#{action}"',
+            "SOAPACTION": f'"{service}#{action}"',
         }
         async with session.post(url, data=body.encode(), headers=headers) as response:
             response.raise_for_status()
@@ -606,6 +631,7 @@ class PlayerWatcher:
                 _LOGGER.debug("no UPnP renderer reachable; skipping DLNA")
                 self._dlna_warned = True
             self._dlna_control = None
+            self._dlna_rendering = None
             return []
         self._dlna_warned = False
 
@@ -629,6 +655,96 @@ class PlayerWatcher:
         player.length_us = _upnp_duration_us(position.get("TrackDuration")) or meta.get("length_us")
         player.position_us = _upnp_duration_us(position.get("RelTime"))
         return [player]
+
+    # -- control -------------------------------------------------------------
+
+    def _find(self, player_id: str | None) -> Player | None:
+        target = player_id or self._state.active
+        return next((p for p in self._state.players if p.id == target), None)
+
+    async def set_volume(self, level: float, player_id: str | None = None) -> bool:
+        """Set the volume of one player, 0.0-1.0. Returns whether it was applied."""
+        player = self._find(player_id)
+        if player is None:
+            return False
+        level = max(0.0, min(1.0, level))
+
+        if player.source == "dlna":
+            session = await self._http_session()
+            control = await self._control_url(session)
+            # RenderingControl is a different service from AVTransport, and it
+            # takes whole percent rather than a fraction.
+            await self._soap_rendering(
+                session,
+                control,
+                "SetVolume",
+                f"<Channel>Master</Channel>"
+                f"<DesiredVolume>{int(round(level * 100))}</DesiredVolume>",
+            )
+            return True
+
+        if player.source == "bluetooth":
+            # BlueZ carries volume on MediaTransport1, not on the player, and
+            # only when the peer negotiated absolute volume. Not supported here.
+            return False
+
+        bus = await self._session()
+        await self._call(
+            bus,
+            player.id,
+            IFACE_PROPS,
+            "Set",
+            path=MPRIS_PATH,
+            signature="ssv",
+            body=[IFACE_MPRIS_PLAYER, "Volume", Variant("d", level)],
+        )
+        return True
+
+    async def send_command(self, command: str, player_id: str | None = None) -> bool:
+        """Send a transport command to one player. Returns whether it was sent."""
+        mpris = {
+            "play": "Play",
+            "pause": "Pause",
+            "play_pause": "PlayPause",
+            "stop": "Stop",
+            "next": "Next",
+            "previous": "Previous",
+        }
+        if command not in mpris:
+            _LOGGER.warning("ignoring unknown command %r", command)
+            return False
+
+        player = self._find(player_id)
+        if player is None:
+            return False
+
+        if player.source == "dlna":
+            session = await self._http_session()
+            control = await self._control_url(session)
+            # UPnP has no PlayPause, so resolve it against what we last saw.
+            action = command
+            if action == "play_pause":
+                action = "pause" if player.is_playing else "play"
+            upnp = {
+                "play": ("Play", "<Speed>1</Speed>"),
+                "pause": ("Pause", ""),
+                "stop": ("Stop", ""),
+                "next": ("Next", ""),
+                "previous": ("Previous", ""),
+            }
+            if action not in upnp:
+                return False
+            name, extra = upnp[action]
+            await self._soap(session, control, name, extra)
+            return True
+
+        # Both MPRIS and org.bluez.MediaPlayer1 use these method names.
+        interface = IFACE_BLUEZ_PLAYER if player.source == "bluetooth" else IFACE_MPRIS_PLAYER
+        path = player.id if player.source == "bluetooth" else MPRIS_PATH
+        destination = BLUEZ_SERVICE if player.source == "bluetooth" else player.id
+        bus = await (self._system() if player.source == "bluetooth" else self._session())
+        await self._call(bus, destination, interface, mpris[command], path=path)
+        return True
 
     # -- picking what to show ------------------------------------------------
 
