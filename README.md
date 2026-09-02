@@ -295,12 +295,21 @@ Off by default. Turning it on adds a third source: a phone pairs with the Pi and
 plays straight to it over A2DP, mixed into the same output as AirPlay and Sendspin,
 and showing up in the same web UI via AVRCP metadata.
 
-> **Not verified on hardware.** Everything else here was tested end to end in a
-> container. Bluetooth could not be — Docker has no radio to give it, so the
-> BlueZ reader in the web UI was tested against a stand-in service
-> ([`scripts/fake_bluez.py`](scripts/fake_bluez.py)) and the daemons were only
-> checked as far as "they start and take their D-Bus names". The pairing and
-> audio path itself is unproven. Treat this feature as beta.
+> **Not verified on real hardware.** Docker has no radio to give it, so this is the
+> least-proven feature here. What *has* been verified, against the stand-in BlueZ in
+> [`scripts/fake_bluez.py`](scripts/fake_bluez.py): the web UI's AVRCP reader, and the
+> pairing agent's full startup — it registers with `NoInputNoOutput` capability, becomes
+> the default agent, powers the adapter, sets its name, turns on pairable and
+> discoverable, and marks a paired device trusted. `bluetoothd` and `bluealsa` are only
+> checked as far as starting and taking their D-Bus names.
+>
+> What is still unproven is everything that needs a radio: pairing over the air,
+> reconnecting, and the audio path. Treat this feature as beta.
+>
+> One real bug has already been found and fixed this way — the agent used `-> None`
+> return annotations, which dbus-fast rejects when the class is defined, so it could
+> never have started at all. That is what [`web/tests/test_bt_agent.py`](web/tests/test_bt_agent.py)
+> now guards against.
 
 It needs three things beyond `ENABLE_BLUETOOTH=1`:
 

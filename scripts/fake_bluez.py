@@ -20,33 +20,102 @@ import asyncio
 from dbus_fast import BusType, Variant
 from dbus_fast.aio import MessageBus
 from dbus_fast.constants import PropertyAccess
-from dbus_fast.service import ServiceInterface, dbus_property
+from dbus_fast.service import ServiceInterface, dbus_property, method
 
 ADAPTER_PATH = "/org/bluez/hci0"
 DEVICE_PATH = "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF"
 PLAYER_PATH = f"{DEVICE_PATH}/player0"
 
 
+class AgentManager(ServiceInterface):
+    """Enough of org.bluez.AgentManager1 for a pairing agent to register."""
+
+    def __init__(self) -> None:
+        """Create the agent manager interface."""
+        super().__init__("org.bluez.AgentManager1")
+        self.registered: list[tuple[str, str]] = []
+        self.default: str | None = None
+
+    @method()
+    def RegisterAgent(self, agent: "o", capability: "s"):  # noqa: N802
+        """Record the agent BlueZ would have registered."""
+        self.registered.append((agent, capability))
+        print(f"RegisterAgent {agent} capability={capability}", flush=True)
+
+    @method()
+    def RequestDefaultAgent(self, agent: "o"):  # noqa: N802
+        """Record the agent being made default."""
+        self.default = agent
+        print(f"RequestDefaultAgent {agent}", flush=True)
+
+    @method()
+    def UnregisterAgent(self, agent: "o"):  # noqa: N802
+        """Forget a previously registered agent."""
+        self.registered = [a for a in self.registered if a[0] != agent]
+
+
 class Adapter(ServiceInterface):
-    """A powered-on org.bluez.Adapter1."""
+    """A writable org.bluez.Adapter1, so agent property sets can be observed."""
 
     def __init__(self) -> None:
         """Create the adapter interface."""
         super().__init__("org.bluez.Adapter1")
+        self.state: dict[str, object] = {
+            "Powered": False,
+            "Alias": "",
+            "Pairable": False,
+            "Discoverable": False,
+        }
 
-    @dbus_property(access=PropertyAccess.READ)
+    @dbus_property(access=PropertyAccess.READWRITE)
     def Powered(self) -> "b":  # noqa: N802
         """Whether the radio is on."""
-        return True
+        return bool(self.state["Powered"])
+
+    @Powered.setter
+    def Powered(self, value: "b"):  # noqa: N802
+        self.state["Powered"] = value
+        print(f"Adapter.Powered = {value}", flush=True)
+
+    @dbus_property(access=PropertyAccess.READWRITE)
+    def Alias(self) -> "s":  # noqa: N802
+        """The adapter's advertised name."""
+        return str(self.state["Alias"])
+
+    @Alias.setter
+    def Alias(self, value: "s"):  # noqa: N802
+        self.state["Alias"] = value
+        print(f"Adapter.Alias = {value}", flush=True)
+
+    @dbus_property(access=PropertyAccess.READWRITE)
+    def Pairable(self) -> "b":  # noqa: N802
+        """Whether new devices may pair."""
+        return bool(self.state["Pairable"])
+
+    @Pairable.setter
+    def Pairable(self, value: "b"):  # noqa: N802
+        self.state["Pairable"] = value
+        print(f"Adapter.Pairable = {value}", flush=True)
+
+    @dbus_property(access=PropertyAccess.READWRITE)
+    def Discoverable(self) -> "b":  # noqa: N802
+        """Whether the adapter answers inquiries."""
+        return bool(self.state["Discoverable"])
+
+    @Discoverable.setter
+    def Discoverable(self, value: "b"):  # noqa: N802
+        self.state["Discoverable"] = value
+        print(f"Adapter.Discoverable = {value}", flush=True)
 
 
 class Device(ServiceInterface):
-    """A paired, connected org.bluez.Device1."""
+    """A paired, connected org.bluez.Device1 that starts out untrusted."""
 
     def __init__(self, alias: str) -> None:
         """Create the device interface with the name the UI should show."""
         super().__init__("org.bluez.Device1")
         self._alias = alias
+        self.trusted = False
 
     @dbus_property(access=PropertyAccess.READ)
     def Alias(self) -> "s":  # noqa: N802
@@ -62,6 +131,16 @@ class Device(ServiceInterface):
     def Paired(self) -> "b":  # noqa: N802
         """Whether the device is paired."""
         return True
+
+    @dbus_property(access=PropertyAccess.READWRITE)
+    def Trusted(self) -> "b":  # noqa: N802
+        """Whether the device may reconnect on its own."""
+        return self.trusted
+
+    @Trusted.setter
+    def Trusted(self, value: "b"):  # noqa: N802
+        self.trusted = value
+        print(f"Device.Trusted = {value}", flush=True)
 
 
 class MediaPlayer(ServiceInterface):
@@ -116,6 +195,7 @@ async def main() -> None:
     player = MediaPlayer(args.title, args.artist, args.album, length_ms, args.status)
 
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+    bus.export("/org/bluez", AgentManager())
     bus.export(ADAPTER_PATH, Adapter())
     bus.export(DEVICE_PATH, Device(args.alias))
     bus.export(PLAYER_PATH, player)
