@@ -162,7 +162,7 @@ file-level overrides.
 | `EXTRA_SPOTIFYD_ARGS` | *unset* | Appended to the `spotifyd` command line |
 | `EXTRA_GMEDIARENDER_ARGS` | *unset* | Appended to the `gmediarender` command line |
 | `AVAHI_MODE` | `auto` | `auto`, `host` or `container` — see [mDNS](#mdns-and-the-hosts-avahi) |
-| `AVAHI_INTERFACES` | default route's | Comma-separated interfaces Avahi may announce on |
+| `AVAHI_INTERFACES` | real interfaces | Comma-separated interfaces Avahi may announce on |
 | `AVAHI_HOST_NAME` | system hostname | Override the `.local` name in container mode |
 | `WEB_PORT` | `8080` | Web UI port |
 | `LOG_LEVEL` | `info` | `debug` for much noisier logs |
@@ -221,9 +221,11 @@ starting its own — services register against the host's Avahi and the name sta
 
 **Docker bridge addresses.** In container mode Avahi would otherwise announce every
 interface it can see, including `docker0`, `br-*` and `veth*`. An AirPlay client that
-picks `172.17.0.1` out of that list simply fails to connect. The entrypoint restricts
-announcements to the interface carrying the default route; override with
-`AVAHI_INTERFACES=wlan0,eth0` if that guess is wrong. If the host's own Avahi has the
+picks `172.17.0.1` out of that list simply fails to connect. The entrypoint therefore
+restricts announcements to the machine's real interfaces — everything except loopback
+and the ones Docker creates — so a Pi on both Ethernet and Wi-Fi advertises on
+`eth0,wlan0` and nothing else. Override with `AVAHI_INTERFACES=wlan0` to narrow it
+further. If the host's own Avahi has the
 same problem, fix it in the host's `/etc/avahi/avahi-daemon.conf` — that one is outside
 this container's control.
 

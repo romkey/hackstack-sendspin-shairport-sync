@@ -174,11 +174,26 @@ SPSCONF
 ##############################################################################
 # mDNS
 ##############################################################################
-# The interface carrying the default route. Used to keep Avahi from announcing
-# Docker's bridge addresses (172.x on docker0/br-*/veth*) to the LAN, which
-# AirPlay clients will otherwise try to connect to and fail.
-default_iface() {
-    awk '$2 == "00000000" && $8 == "00000000" { print $1; exit }' /proc/net/route
+# Every real network interface, which in practice means everything except
+# loopback and the ones Docker creates. Avahi would otherwise announce the
+# bridge addresses (172.x on docker0/br-*/veth*) to the LAN, and an AirPlay
+# client that picks one of those simply fails to connect. A Pi on both Ethernet
+# and Wi-Fi should advertise on both, so this is not narrowed to the default
+# route's interface.
+lan_interfaces() {
+    local found="" name
+    for path in /sys/class/net/*; do
+        # bonding_masters is a file rather than an interface.
+        [ -d "$path" ] || continue
+        name="$(basename "$path")"
+        case "$name" in
+            # Docker's own, and the kernel's tunnel pseudo-devices.
+            lo | docker* | br-* | veth* | virbr*) continue ;;
+            gre* | erspan* | sit* | tunl* | ip6* | ip_vti* | dummy* | tun* | tap*) continue ;;
+        esac
+        found="${found:+$found,}${name}"
+    done
+    printf '%s' "$found"
 }
 
 resolve_avahi_mode() {
@@ -207,12 +222,15 @@ write_avahi_conf() {
 
     local interfaces="${AVAHI_INTERFACES}"
     if [ -z "$interfaces" ]; then
-        interfaces="$(default_iface)"
+        interfaces="$(lan_interfaces)"
     fi
     local allow_line=""
     if [ -n "$interfaces" ]; then
         allow_line="allow-interfaces=${interfaces}"
         log "Avahi will announce only on: ${interfaces}"
+    else
+        log "WARNING: found no LAN interfaces; Avahi will announce on all of them,"
+        log "  including Docker's. Set AVAHI_INTERFACES to fix this."
     fi
 
     mkdir -p /etc/avahi
