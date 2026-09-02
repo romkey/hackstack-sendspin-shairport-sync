@@ -43,17 +43,18 @@ docker compose -f docker-compose.prod.yml up -d
 
 Then open `http://<pi>/` — that is the whole thing for AirPlay and Sendspin.
 
-**On by default:** AirPlay 2, Sendspin, the web UI. Turn any of them off with
-`ENABLE_AIRPLAY=0`, `ENABLE_SENDSPIN=0`, `ENABLE_WEB=0`.
+**Everything is one variable in `.env`.** Set it to `1` to turn a piece on, `0` to turn
+it off:
 
-**Off by default.** Each is one variable in `.env`, plus whatever is in the last column:
-
-| To add | Set in `.env` | Also required |
-| --- | --- | --- |
-| **Bluetooth** | `ENABLE_BLUETOOTH=1` | uncomment `NET_ADMIN` and `/dev/rfkill` in the compose file, **and** `sudo systemctl disable --now bluetooth` on the Pi — the container needs the adapter to itself |
-| **Spotify Connect** | `ENABLE_SPOTIFY=1` | a Spotify Premium account; nothing to configure, you claim the speaker from the app |
-| **DLNA / UPnP** | `ENABLE_DLNA=1` | nothing — best option for Android |
-| **Home Assistant** | `ENABLE_MQTT=1`, `MQTT_HOST=…` | an MQTT broker; entities appear by themselves |
+| Feature | Variable | Default | Also required |
+| --- | --- | --- | --- |
+| **AirPlay 2** | `ENABLE_AIRPLAY` | **on** | nothing |
+| **Bluetooth** | `ENABLE_BLUETOOTH` | off | uncomment `NET_ADMIN` and `/dev/rfkill` in the compose file, **and** `sudo systemctl disable --now bluetooth` on the Pi — the container needs the adapter to itself |
+| **DLNA / UPnP** | `ENABLE_DLNA` | off | nothing — best option for Android |
+| **Home Assistant** | `ENABLE_MQTT` | off | also set `MQTT_HOST`; needs an MQTT broker, then entities appear by themselves |
+| **Sendspin** | `ENABLE_SENDSPIN` | **on** | nothing |
+| **Spotify Connect** | `ENABLE_SPOTIFY` | off | a Spotify Premium account; nothing to configure, you claim the speaker from the app |
+| **Web UI** | `ENABLE_WEB` | **on** | port 80 free on the Pi, or set `WEB_PORT` |
 
 **Already set in the compose file, and needed:** host networking, `SYS_NICE`, `/dev/snd`,
 and the two Avahi socket mounts. Don't remove them unless you know why.
