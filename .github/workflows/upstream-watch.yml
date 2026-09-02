@@ -25,7 +25,7 @@ jobs:
 
       - name: Open a version-bump pull request
         if: steps.check.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: chore/upstream-bump
           commit-message: "chore: bump upstream versions"
