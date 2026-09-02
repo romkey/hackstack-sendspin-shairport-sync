@@ -21,4 +21,15 @@ if [ -n "${SPOTIFY_ZEROCONF_PORT:-}" ]; then args+=(--zeroconf-port "${SPOTIFY_Z
 
 # shellcheck disable=SC2206  # word splitting is intended for user-supplied args
 extra=(${EXTRA_SPOTIFYD_ARGS:-})
+
+# spotifyd's zeroconf library cannot parse some perfectly ordinary mDNS records
+# other devices broadcast -- NSEC (type 47) in particular -- and logs a warning
+# for each one. On a busy network that is several lines a second, which buries
+# everything else and churns through the log rotation. It says nothing about our
+# own advertisement, so drop those lines by default. spotifyd fixes its log level
+# internally, so RUST_LOG cannot do this for us.
+if [ "${SPOTIFY_QUIET_MDNS:-1}" = "1" ]; then
+    exec > >(grep --line-buffered -vE "parse packet from .*:5353") 2>&1
+fi
+
 exec /usr/local/bin/spotifyd "${args[@]}" "${extra[@]}"

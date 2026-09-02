@@ -167,6 +167,7 @@ and so follows the hostname instead.
 | `DLNA_PORT` | `49494` | UPnP HTTP port |
 | `DLNA_AUDIO_DEVICE` | `default` | ALSA device DLNA plays to |
 | `DLNA_AUDIO_ONLY` | `1` | Set `0` to also advertise video |
+| `SPOTIFY_QUIET_MDNS` | `1` | Drop spotifyd's unparseable-mDNS-packet warnings; `0` keeps them |
 | `EXTRA_SPOTIFYD_ARGS` | *unset* | Appended to the `spotifyd` command line |
 | `EXTRA_GMEDIARENDER_ARGS` | *unset* | Appended to the `gmediarender` command line |
 | `AVAHI_MODE` | `auto` | `auto`, `host` or `container` — see [mDNS](#mdns-and-the-hosts-avahi) |
@@ -532,6 +533,14 @@ whether the host's own `bluetooth` service is still running and holding the adap
 
 Nothing pairs? Watch `docker logs` for the `bt-agent` lines — it logs every
 authorisation it accepts.
+
+**Log full of `couldn't parse packet from …:5353: class … is invalid`.** That is
+spotifyd's zeroconf library failing to parse ordinary mDNS records other devices
+broadcast — NSEC records in particular, which plenty of routers and phones send. It is
+harmless and says nothing about spotifyd's own advertisement, but on a busy network it
+is several lines a second and churns through the log rotation, so it is filtered out by
+default. Set `SPOTIFY_QUIET_MDNS=0` to see them again. spotifyd fixes its own log level
+internally, so `RUST_LOG` has no effect on it.
 
 **Spotify doesn't appear in the app.** Connect discovery needs the phone on the same
 subnet as the Pi, host networking (which you have), and a Premium account. Check
