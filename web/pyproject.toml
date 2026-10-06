@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
   "aiohttp>=3.14.3",
-  "dbus-fast>=5.0.22",
+  "dbus-fast>=5.2.0",
   "aiomqtt>=2.5.1",
 ]
 
